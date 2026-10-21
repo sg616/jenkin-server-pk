@@ -1,0 +1,198 @@
+// Build -> push to SWR -> deploy to sky47 CCE for sample-project-sky-47-deploy-test.
+// Job setup: jobs/sample-project-sky-47-deploy.md   Usage: docs/06-pipeline.md
+//
+// Credentials (Manage Jenkins > Credentials, see docs/04-credentials.md):
+//   swr-login       Username/password  pk-isb-1_<domain>@<AK> / long-term login key
+//   cce-kubeconfig  Secret file        CCE internal-endpoint kubeconfig
+//   github-sg616    Username/password  optional, only if the app repo is private
+
+// Service name == Deployment name == container name in k8s/*.yaml of the app repo.
+// The map order is also the deploy order (backends before the frontend).
+def services() {
+  return [
+    'backend'       : [dir: 'backend',        image: 'sample-backend'],
+    'orders-backend': [dir: 'orders-backend', image: 'sample-orders-backend'],
+    'frontend'      : [dir: 'frontend',       image: 'sample-frontend'],
+  ]
+}
+
+def selectedServices() {
+  return params.SERVICES == 'all' ? services().keySet() as List : [params.SERVICES]
+}
+
+// Build #1 of a fresh job only registers the parameters (declarative pipelines
+// learn them on first run) so it must not deploy anything with the defaults.
+def registerOnly() {
+  return env.BUILD_NUMBER == '1'
+}
+
+def doing(String action) {
+  return !registerOnly() && params.ACTION == action
+}
+
+def imageRef(String svc) {
+  return "${env.SWR_REGISTRY}/${env.SWR_ORG}/${services()[svc].image}:${env.TAG}"
+}
+
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    ansiColor('xterm')
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+    timeout(time: 30, unit: 'MINUTES')
+    skipDefaultCheckout()
+  }
+
+  parameters {
+    choice(name: 'ACTION', choices: ['deploy', 'rollback'],
+           description: 'deploy = build, push and roll out. rollback = kubectl rollout undo (no build).')
+    choice(name: 'SERVICES', choices: ['all', 'backend', 'orders-backend', 'frontend'],
+           description: 'Which service(s) to act on.')
+    string(name: 'BRANCH', defaultValue: 'main',
+           description: 'Branch of sample-project-sky-47-deploy-test to build.')
+    string(name: 'IMAGE_TAG', defaultValue: '',
+           description: 'Leave empty for <branch>-<shortSHA>-<build#>. Set e.g. 1.3.0 for a release tag.')
+    booleanParam(name: 'DEPLOY', defaultValue: true,
+           description: 'Untick to only build and push images to SWR.')
+  }
+
+  environment {
+    APP_REPO       = 'https://github.com/sg616/sample-project-sky-47-deploy-test.git'
+    APP_REPO_CREDS = ''                       // set to 'github-sg616' if the repo becomes private
+    SWR_REGISTRY   = 'swr.pk-isb-1.sky47.com'
+    SWR_ORG        = 'pk-beta-repo'
+    K8S_NAMESPACE  = 'sample-app'
+    ROLLOUT_TIMEOUT = '180s'
+    // Keep docker login state inside the workspace, never in ~jenkins/.docker
+    DOCKER_CONFIG  = "${WORKSPACE}/.docker"
+  }
+
+  stages {
+    stage('Checkout app') {
+      when { expression { doing('deploy') } }
+      steps {
+        dir('app') {
+          script {
+            def remote = [url: env.APP_REPO]
+            if (env.APP_REPO_CREDS?.trim()) { remote.credentialsId = env.APP_REPO_CREDS }
+            checkout([$class: 'GitSCM',
+                      branches: [[name: "*/${params.BRANCH}"]],
+                      userRemoteConfigs: [remote]])
+          }
+        }
+      }
+    }
+
+    stage('Resolve') {
+      steps {
+        script {
+          if (registerOnly()) {
+            currentBuild.description = 'Parameters registered, nothing deployed'
+            echo 'First build: parameters registered. Use "Build with Parameters" from now on.'
+            return
+          }
+          if (params.ACTION == 'deploy') {
+            def sha = dir('app') { sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim() }
+            def branch = params.BRANCH.replaceAll('[^A-Za-z0-9_.-]', '-')
+            env.TAG = params.IMAGE_TAG?.trim() ?: "${branch}-${sha}-${env.BUILD_NUMBER}"
+          } else {
+            env.TAG = 'n/a'
+          }
+          currentBuild.description = "${params.ACTION} ${selectedServices().join(',')} @ ${env.TAG}"
+          echo "Action: ${params.ACTION} | Services: ${selectedServices()} | Tag: ${env.TAG}"
+        }
+      }
+    }
+
+    stage('Build images') {
+      when { expression { doing('deploy') } }
+      steps {
+        script {
+          for (String svc : selectedServices()) {
+            sh "docker build --pull -t ${imageRef(svc)} app/${services()[svc].dir}"
+          }
+        }
+      }
+    }
+
+    stage('Push to SWR') {
+      when { expression { doing('deploy') } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'swr-login',
+                                          usernameVariable: 'SWR_USER',
+                                          passwordVariable: 'SWR_PASS')]) {
+          // Single quotes: secrets are expanded by the shell, not interpolated by Groovy
+          sh 'echo "$SWR_PASS" | docker login -u "$SWR_USER" --password-stdin "$SWR_REGISTRY"'
+        }
+        script {
+          for (String svc : selectedServices()) {
+            sh "docker push ${imageRef(svc)}"
+          }
+        }
+      }
+      post {
+        always { sh 'docker logout "$SWR_REGISTRY" || true' }
+      }
+    }
+
+    stage('Deploy to CCE') {
+      when { expression { doing('deploy') && params.DEPLOY } }
+      steps {
+        withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
+          script {
+            for (String svc : selectedServices()) {
+              sh "kubectl -n ${env.K8S_NAMESPACE} set image deployment/${svc} ${svc}=${imageRef(svc)}"
+              try {
+                sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
+              } catch (err) {
+                echo "Rollout of ${svc} failed, rolling back to the previous ReplicaSet"
+                sh "kubectl -n ${env.K8S_NAMESPACE} rollout undo deployment/${svc}"
+                sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
+                error("Deploy of ${svc}:${env.TAG} failed and was rolled back")
+              }
+            }
+          }
+        }
+      }
+    }
+
+    stage('Rollback') {
+      when { expression { doing('rollback') } }
+      steps {
+        withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
+          script {
+            for (String svc : selectedServices()) {
+              sh "kubectl -n ${env.K8S_NAMESPACE} rollout undo deployment/${svc}"
+              sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
+            }
+          }
+        }
+      }
+    }
+
+    stage('Verify') {
+      when { expression { doing('rollback') || (doing('deploy') && params.DEPLOY) } }
+      steps {
+        withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
+          sh '''
+            kubectl -n "$K8S_NAMESPACE" get deploy -o wide
+            kubectl -n "$K8S_NAMESPACE" get pods -o wide
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    success {
+      echo "Done: ${currentBuild.description}"
+    }
+    always {
+      sh 'docker image prune -f || true'
+      cleanWs()
+    }
+  }
+}

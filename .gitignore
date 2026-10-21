@@ -1,0 +1,20 @@
+# Never commit secrets or machine-local config
+config/jenkins.env
+*.env
+!config/jenkins.env.example
+secrets/
+*.ppk
+*.pem
+*.key
+kubeconfig*
+*.kubeconfig
+*.tar.gz
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+*.stackdump
+.remember/

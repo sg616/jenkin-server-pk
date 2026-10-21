@@ -1,0 +1,26 @@
+# Plugins installed by scripts/05-install-plugins.sh.
+# No versions on purpose: the plugin manager resolves the latest release
+# compatible with the installed Jenkins LTS (and pulls dependencies).
+# Pin one only if an upgrade breaks something, e.g.  git:5.7.0
+
+# Pipeline core
+workflow-aggregator
+pipeline-stage-view
+pipeline-graph-view
+
+# SCM
+git
+github
+
+# Credentials
+credentials
+credentials-binding
+plain-credentials
+
+# Build UX
+timestamper
+ansicolor
+ws-cleanup
+
+# Security
+matrix-auth
