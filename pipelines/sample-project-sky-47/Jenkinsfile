@@ -5,6 +5,9 @@
 //   swr-login       Username/password  pk-isb-1_<domain>@<AK> / long-term login key
 //   cce-kubeconfig  Secret file        CCE internal-endpoint kubeconfig
 //   github-sg616    Username/password  optional, only if the app repo is private
+//
+// Shell safety: user input reaches sh steps only through withEnv + single-quoted
+// scripts, and only after the Validate stage has checked it.
 
 // Service name == Deployment name == container name in k8s/*.yaml of the app repo.
 // The map order is also the deploy order (backends before the frontend).
@@ -21,7 +24,8 @@ def selectedServices() {
 }
 
 // Build #1 of a fresh job only registers the parameters (declarative pipelines
-// learn them on first run) so it must not deploy anything with the defaults.
+// learn them on first run) and checks out the app repo so the REF dropdown can
+// list its branches/tags. It never builds or deploys.
 def registerOnly() {
   return env.BUILD_NUMBER == '1'
 }
@@ -30,8 +34,33 @@ def doing(String action) {
   return !registerOnly() && params.ACTION == action
 }
 
+// Git Parameter values: branches look like "origin/main", tags like "v1.3.0".
+def ref() {
+  return (params.REF ?: 'origin/main').trim()
+}
+
+def isBranch() {
+  return ref().startsWith('origin/')
+}
+
+def refName() {
+  return isBranch() ? ref().substring('origin/'.length()) : ref()
+}
+
+def dockerSafe(String s) {
+  return s.replaceAll('[^A-Za-z0-9_.-]', '-')
+}
+
+def validTag(String s) {
+  return s ==~ /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/
+}
+
 def imageRef(String svc) {
   return "${env.SWR_REGISTRY}/${env.SWR_ORG}/${services()[svc].image}:${env.TAG}"
+}
+
+def svcEnv(String svc) {
+  return ["SVC=${svc}", "SVC_DIR=app/${services()[svc].dir}", "IMAGE_REF=${imageRef(svc)}"]
 }
 
 pipeline {
@@ -47,39 +76,71 @@ pipeline {
   }
 
   parameters {
-    choice(name: 'ACTION', choices: ['deploy', 'rollback'],
-           description: 'deploy = build, push and roll out. rollback = kubectl rollout undo (no build).')
+    choice(name: 'ACTION', choices: ['deploy', 'deploy-existing', 'rollback'],
+           description: '''deploy = build REF, push a new image, roll it out.
+deploy-existing = roll out IMAGE_TAG that is already in SWR (no build). Use it to go back to any older version.
+rollback = kubectl rollout undo to the previous revision. With SERVICES=all it undoes ALL three, even unchanged ones; prefer one service.''')
     choice(name: 'SERVICES', choices: ['all', 'backend', 'orders-backend', 'frontend'],
            description: 'Which service(s) to act on.')
-    string(name: 'BRANCH', defaultValue: 'main',
-           description: 'Branch of sample-project-sky-47-deploy-test to build.')
+    gitParameter(name: 'REF', type: 'PT_BRANCH_TAG', defaultValue: 'origin/main',
+                 branchFilter: 'origin/.*', tagFilter: '*', selectedValue: 'DEFAULT',
+                 sortMode: 'DESCENDING_SMART', quickFilterEnabled: true, listSize: '10',
+                 useRepository: '.*sample-project-sky-47-deploy-test.*',
+                 description: 'Branch (origin/...) or git tag of the app repo to build. Used by ACTION=deploy only.')
     string(name: 'IMAGE_TAG', defaultValue: '',
-           description: 'Leave empty for <branch>-<shortSHA>-<build#>. Set e.g. 1.3.0 for a release tag.')
+           description: '''deploy: optional override. Empty = git tag name, or <branch>-<shortSHA>-<build#> for branches. Must not exist in SWR yet.
+deploy-existing: required, an image tag already in SWR (see past build descriptions).''')
     booleanParam(name: 'DEPLOY', defaultValue: true,
-           description: 'Untick to only build and push images to SWR.')
+           description: 'deploy only: untick to build and push to SWR without rolling out.')
   }
 
   environment {
-    APP_REPO       = 'https://github.com/sg616/sample-project-sky-47-deploy-test.git'
-    APP_REPO_CREDS = ''                       // set to 'github-sg616' if the repo becomes private
-    SWR_REGISTRY   = 'swr.pk-isb-1.sky47.com'
-    SWR_ORG        = 'pk-beta-repo'
-    K8S_NAMESPACE  = 'sample-app'
+    APP_REPO        = 'https://github.com/sg616/sample-project-sky-47-deploy-test.git'
+    APP_REPO_CREDS  = ''                      // set to 'github-sg616' if the repo becomes private
+    SWR_REGISTRY    = 'swr.pk-isb-1.sky47.com'
+    SWR_ORG         = 'pk-beta-repo'
+    K8S_NAMESPACE   = 'sample-app'
     ROLLOUT_TIMEOUT = '180s'
     // Keep docker login state inside the workspace, never in ~jenkins/.docker
-    DOCKER_CONFIG  = "${WORKSPACE}/.docker"
+    DOCKER_CONFIG   = "${WORKSPACE}/.docker"
   }
 
   stages {
+    stage('Validate') {
+      steps {
+        script {
+          if (registerOnly()) {
+            echo 'First build: registering parameters and the app repo refs only.'
+            return
+          }
+          if (!(ref() ==~ /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,199}$/) || ref().contains('..')) {
+            error("Invalid REF: ${ref()}")
+          }
+          if (params.SERVICES != 'all' && !services().containsKey(params.SERVICES)) {
+            error("Unknown SERVICES value: ${params.SERVICES}")
+          }
+          def tag = params.IMAGE_TAG?.trim()
+          if (tag && !validTag(tag)) {
+            error('IMAGE_TAG must match [A-Za-z0-9_][A-Za-z0-9_.-]{0,127} (Docker tag rules)')
+          }
+          if (params.ACTION == 'deploy-existing' && !tag) {
+            error('ACTION=deploy-existing needs IMAGE_TAG (an image tag that is already in SWR)')
+          }
+        }
+      }
+    }
+
     stage('Checkout app') {
-      when { expression { doing('deploy') } }
+      when { expression { registerOnly() || doing('deploy') } }
       steps {
         dir('app') {
           script {
-            def remote = [url: env.APP_REPO]
+            def remote = [url: env.APP_REPO,
+                          refspec: '+refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*']
             if (env.APP_REPO_CREDS?.trim()) { remote.credentialsId = env.APP_REPO_CREDS }
+            def spec = isBranch() ? "refs/heads/${refName()}" : "refs/tags/${refName()}"
             checkout([$class: 'GitSCM',
-                      branches: [[name: "*/${params.BRANCH}"]],
+                      branches: [[name: spec]],
                       userRemoteConfigs: [remote]])
           }
         }
@@ -91,26 +152,57 @@ pipeline {
         script {
           if (registerOnly()) {
             currentBuild.description = 'Parameters registered, nothing deployed'
-            echo 'First build: parameters registered. Use "Build with Parameters" from now on.'
+            echo 'Done. Reload the job page and use "Build with Parameters" from now on.'
             return
           }
-          // Every value below ends up inside sh steps (some with the kubeconfig bound),
-          // so reject anything that is not a plain service name / Docker tag.
-          if (params.SERVICES != 'all' && !services().containsKey(params.SERVICES)) {
-            error("Unknown SERVICES value: ${params.SERVICES}")
-          }
-          if (params.IMAGE_TAG?.trim() && !(params.IMAGE_TAG.trim() ==~ /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/)) {
-            error('IMAGE_TAG must match [A-Za-z0-9_][A-Za-z0-9_.-]{0,127} (Docker tag rules)')
-          }
+          def override = params.IMAGE_TAG?.trim()
           if (params.ACTION == 'deploy') {
             def sha = dir('app') { sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim() }
-            def branch = params.BRANCH.replaceAll('[^A-Za-z0-9_.-]', '-')
-            env.TAG = params.IMAGE_TAG?.trim() ?: "${branch}-${sha}-${env.BUILD_NUMBER}"
+            if (override) {
+              env.TAG = override
+            } else if (!isBranch()) {
+              env.TAG = dockerSafe(refName())
+            } else {
+              env.TAG = "${dockerSafe(refName())}-${sha}-${env.BUILD_NUMBER}"
+            }
+            env.SOURCE_REF = "${ref()}@${sha}"
+          } else if (params.ACTION == 'deploy-existing') {
+            env.TAG = override
+            env.SOURCE_REF = 'existing image'
           } else {
             env.TAG = 'n/a'
+            env.SOURCE_REF = 'rollout undo'
           }
-          currentBuild.description = "${params.ACTION} ${selectedServices().join(',')} @ ${env.TAG}"
-          echo "Action: ${params.ACTION} | Services: ${selectedServices()} | Tag: ${env.TAG}"
+          if (params.ACTION != 'rollback' && !validTag(env.TAG)) {
+            error("Derived image tag '${env.TAG}' is not a valid Docker tag; set IMAGE_TAG explicitly")
+          }
+          currentBuild.description = "${params.ACTION} ${selectedServices().join(',')} @ ${env.TAG} (${env.SOURCE_REF})"
+          echo "Action: ${params.ACTION} | Services: ${selectedServices()} | Tag: ${env.TAG} | Source: ${env.SOURCE_REF}"
+        }
+      }
+    }
+
+    stage('SWR login + tag check') {
+      when { expression { doing('deploy') || doing('deploy-existing') } }
+      steps {
+        withCredentials([usernamePassword(credentialsId: 'swr-login',
+                                          usernameVariable: 'SWR_USER',
+                                          passwordVariable: 'SWR_PASS')]) {
+          sh 'echo "$SWR_PASS" | docker login -u "$SWR_USER" --password-stdin "$SWR_REGISTRY"'
+        }
+        script {
+          for (String svc : selectedServices()) {
+            withEnv(svcEnv(svc)) {
+              def exists = sh(script: 'docker manifest inspect "$IMAGE_REF" > /dev/null 2>&1', returnStatus: true) == 0
+              if (params.ACTION == 'deploy' && exists) {
+                // Overwriting a tag would make `set image` a no-op: nothing rolls out.
+                error("${imageRef(svc)} already exists in SWR. Use ACTION=deploy-existing to roll it out, or pick another IMAGE_TAG.")
+              }
+              if (params.ACTION == 'deploy-existing' && !exists) {
+                error("${imageRef(svc)} not found in SWR")
+              }
+            }
+          }
         }
       }
     }
@@ -120,7 +212,10 @@ pipeline {
       steps {
         script {
           for (String svc : selectedServices()) {
-            sh "docker build --pull -t ${imageRef(svc)} app/${services()[svc].dir}"
+            withEnv(svcEnv(svc)) {
+              sh 'docker build --pull -t "$IMAGE_REF" "$SVC_DIR"'
+            }
+            env.BUILT_IMAGES = "${env.BUILT_IMAGES ?: ''} ${imageRef(svc)}".trim()
           }
         }
       }
@@ -129,37 +224,40 @@ pipeline {
     stage('Push to SWR') {
       when { expression { doing('deploy') } }
       steps {
-        withCredentials([usernamePassword(credentialsId: 'swr-login',
-                                          usernameVariable: 'SWR_USER',
-                                          passwordVariable: 'SWR_PASS')]) {
-          // Single quotes: secrets are expanded by the shell, not interpolated by Groovy
-          sh 'echo "$SWR_PASS" | docker login -u "$SWR_USER" --password-stdin "$SWR_REGISTRY"'
-        }
         script {
           for (String svc : selectedServices()) {
-            sh "docker push ${imageRef(svc)}"
+            withEnv(svcEnv(svc)) {
+              sh 'docker push "$IMAGE_REF"'
+            }
           }
         }
-      }
-      post {
-        always { sh 'docker logout "$SWR_REGISTRY" || true' }
       }
     }
 
     stage('Deploy to CCE') {
-      when { expression { doing('deploy') && params.DEPLOY } }
+      when { expression { (doing('deploy') && params.DEPLOY) || doing('deploy-existing') } }
       steps {
         withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
           script {
             for (String svc : selectedServices()) {
-              sh "kubectl -n ${env.K8S_NAMESPACE} set image deployment/${svc} ${svc}=${imageRef(svc)}"
-              try {
-                sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
-              } catch (err) {
-                echo "Rollout of ${svc} failed, rolling back to the previous ReplicaSet"
-                sh "kubectl -n ${env.K8S_NAMESPACE} rollout undo deployment/${svc}"
-                sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
-                error("Deploy of ${svc}:${env.TAG} failed and was rolled back")
+              withEnv(svcEnv(svc) + ["CHANGE_CAUSE=jenkins #${env.BUILD_NUMBER} ${env.TAG} (${env.SOURCE_REF})"]) {
+                def current = sh(script: 'kubectl -n "$K8S_NAMESPACE" get "deployment/$SVC" -o jsonpath="{.spec.template.spec.containers[0].image}"',
+                                 returnStdout: true).trim()
+                if (current == imageRef(svc)) {
+                  echo "${svc} already runs ${current}, nothing to roll out"
+                  return
+                }
+                // Annotate first: the new ReplicaSet copies it, so `rollout history` shows it.
+                sh 'kubectl -n "$K8S_NAMESPACE" annotate "deployment/$SVC" kubernetes.io/change-cause="$CHANGE_CAUSE" --overwrite'
+                sh 'kubectl -n "$K8S_NAMESPACE" set image "deployment/$SVC" "$SVC=$IMAGE_REF"'
+                try {
+                  sh 'kubectl -n "$K8S_NAMESPACE" rollout status "deployment/$SVC" --timeout="$ROLLOUT_TIMEOUT"'
+                } catch (err) {
+                  echo "Rollout of ${svc} failed, rolling back to the previous ReplicaSet"
+                  sh 'kubectl -n "$K8S_NAMESPACE" rollout undo "deployment/$SVC"'
+                  sh 'kubectl -n "$K8S_NAMESPACE" rollout status "deployment/$SVC" --timeout="$ROLLOUT_TIMEOUT"'
+                  error("Deploy of ${svc}:${env.TAG} failed and was rolled back")
+                }
               }
             }
           }
@@ -173,8 +271,10 @@ pipeline {
         withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
           script {
             for (String svc : selectedServices()) {
-              sh "kubectl -n ${env.K8S_NAMESPACE} rollout undo deployment/${svc}"
-              sh "kubectl -n ${env.K8S_NAMESPACE} rollout status deployment/${svc} --timeout=${env.ROLLOUT_TIMEOUT}"
+              withEnv(["SVC=${svc}"]) {
+                sh 'kubectl -n "$K8S_NAMESPACE" rollout undo "deployment/$SVC"'
+                sh 'kubectl -n "$K8S_NAMESPACE" rollout status "deployment/$SVC" --timeout="$ROLLOUT_TIMEOUT"'
+              }
             }
           }
         }
@@ -182,7 +282,7 @@ pipeline {
     }
 
     stage('Verify') {
-      when { expression { doing('rollback') || (doing('deploy') && params.DEPLOY) } }
+      when { expression { doing('rollback') || doing('deploy-existing') || (doing('deploy') && params.DEPLOY) } }
       steps {
         withCredentials([file(credentialsId: 'cce-kubeconfig', variable: 'KUBECONFIG')]) {
           sh '''
@@ -199,6 +299,10 @@ pipeline {
       echo "Done: ${currentBuild.description}"
     }
     always {
+      sh 'docker logout "$SWR_REGISTRY" > /dev/null 2>&1 || true'
+      // Tagged images are not removed by `image prune`; drop what this build created.
+      // BUILT_IMAGES holds validated image refs only, so word splitting is intended.
+      sh 'if [ -n "${BUILT_IMAGES:-}" ]; then docker rmi $BUILT_IMAGES || true; fi'
       sh 'docker image prune -f || true'
       cleanWs()
     }

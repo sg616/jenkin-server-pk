@@ -47,20 +47,21 @@ Then work through docs 03 → 05 and create the job by following [`jobs/sample-p
 - [ ] `cce-kubeconfig` credential added (internal endpoint): [05](docs/05-kubeconfig-cce.md)
 - [ ] Job `sample-project-sky-47-deploy` created, and its first run done: [jobs](jobs/sample-project-sky-47-deploy.md)
 - [ ] Test deploy: `SERVICES=frontend`, then `ACTION=rollback`: [06](docs/06-pipeline.md)
-- [ ] Daily backup cron enabled: [07](docs/07-operations.md)
+- [ ] Daily backup cron enabled, encrypted copy kept off the VM, Cloud Eye alarms set: [07](docs/07-operations.md)
+- [ ] **Branch protection** on both repos, least-privilege kubeconfig, TLS in front: [09](docs/09-security-model.md)
 
 ## Repo layout
 | Path | What |
 |---|---|
 | `config/jenkins.env.example` | Host and tool settings. Copy it to `config/jenkins.env` (git-ignored). |
-| `config/plugins.txt` | Jenkins plugins. Versions are unpinned, so each install gets the latest compatible release. |
+| `config/plugins.txt` | Jenkins plugins, including `git-parameter` for the branch/tag dropdown. Versions are unpinned, so each install gets the latest compatible release. The exact versions are recorded in `INSTALLED_PLUGINS.txt`. |
 | `scripts/bootstrap.sh` | Runs `00`–`05` in order. Safe to run again. |
-| `scripts/00…06-*.sh` | Each install step on its own (prereqs, Java, Jenkins, Docker, kubectl, plugins, nginx) |
+| `scripts/00…07-*.sh` | Each install step on its own (prereqs, Java, Jenkins, Docker, kubectl, plugins), plus the optional nginx (06) and SSH hardening (07) |
 | `scripts/verify.sh` | Health checks: service, Docker, network, SWR login, CCE access |
 | `scripts/backup-jenkins.sh`, `restore-jenkins.sh` | JENKINS_HOME backup and restore |
-| `pipelines/sample-project-sky-47/Jenkinsfile` | Build → push → deploy/rollback pipeline |
+| `pipelines/sample-project-sky-47/Jenkinsfile` | Pipeline with three actions: `deploy` (build a branch/tag, push, roll out), `deploy-existing` (roll out a tag already in SWR) and `rollback` |
 | `jobs/sample-project-sky-47-deploy.md` | Exact steps to create the job |
-| `docs/` | Provisioning, install, config, credentials, kubeconfig, pipeline, operations, troubleshooting |
+| `docs/` | Provisioning, install, config, credentials, kubeconfig, pipeline, operations, troubleshooting, security model |
 
 ## Secrets
 None are stored here. SWR keys and the kubeconfig live only in the Jenkins credential store. `.gitignore` blocks `*.ppk`, `*.pem`, `kubeconfig*` and `config/jenkins.env`.

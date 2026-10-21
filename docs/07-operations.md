@@ -27,17 +27,44 @@ Jenkins changes the apt repo's signing key from time to time (2023 → 2026). If
 sudo bash scripts/backup-jenkins.sh                       # -> /opt/jenkins-backups/jenkins-home-*.tar.gz
 echo "0 2 * * * root /opt/jenkin-server-pk/scripts/backup-jenkins.sh" | sudo tee /etc/cron.d/jenkins-backup
 ```
-- The archive contains `secrets/` and `credentials.xml`. Treat it as a secret: `chmod 600`, and store any off-VM copy encrypted (for example in an OBS bucket with server-side encryption).
+- The archive contains `secrets/` (`master.key`) and `credentials.xml`, which together decrypt every credential. The script always creates it with mode `0600`. Backups taken while Jenkins is running are fine: tar's "file changed as we read it" warnings are expected.
+- **Keep a copy off the VM.** If the VM is lost, the backups on its disk are lost too.
+  1. Create a gpg key on your own machine and import only the **public** key on the VM: `sudo gpg --import jenkins-backup.pub`.
+  2. Set `BACKUP_GPG_RECIPIENT=<key id or email>` in `config/jenkins.env`. Archives are then written as `*.tar.gz.gpg`.
+  3. Copy them to an OBS bucket, for example with `obsutil cp /opt/jenkins-backups/ obs://<bucket>/jenkins/ -r -f`, in the same cron job as the backup.
+- `INSTALLED_PLUGINS.txt` (exact plugin versions, written by `05-install-plugins.sh`) and `INSTALLED_VERSION` are inside every backup.
 - You can also take a sky47 **EVS disk snapshot** of the VM before each major upgrade.
 
 ### Restore
 ```bash
-sudo bash scripts/restore-jenkins.sh /opt/jenkins-backups/jenkins-home-YYYYmmdd-HHMMSS.tar.gz
+sudo bash scripts/restore-jenkins.sh /opt/jenkins-backups/jenkins-home-YYYYmmdd-HHMMSS.tar.gz[.gpg]
 ```
-To rebuild on a new VM:
-1. Run `bootstrap.sh`.
-2. Copy the archive to the new VM.
-3. Run `restore-jenkins.sh`.
+For `.gpg` archives, the private key has to be in root's keyring during the restore. Remove it again afterwards.
+
+To rebuild on a new VM **with identical versions**:
+1. Run `bootstrap.sh`. It installs the latest LTS.
+2. If the backup came from an older LTS, install the same version first: `apt-get install jenkins=<INSTALLED_VERSION>`.
+3. Run `restore-jenkins.sh <archive>`.
+4. To get exactly the same plugins, run the plugin manager with `--plugin-file /var/lib/jenkins/INSTALLED_PLUGINS.txt`.
+
+### Restore drill (every quarter)
+A backup you have never restored is untested.
+1. Every quarter, create a temporary VM.
+2. Run `bootstrap.sh`, then restore the newest off-VM archive.
+3. Log in and check that the job and all three credentials are there.
+4. Delete the VM.
+
+## Monitoring (sky47 Cloud Eye)
+Create these alarms on the Jenkins VM, and send them to an SMN topic that emails you:
+| Metric | Alarm when |
+|---|---|
+| Disk usage `/` (needs the Cloud Eye agent) | > 80% for 5 min |
+| CPU usage | > 90% for 15 min |
+| Memory usage (agent) | > 90% for 10 min |
+| ECS status | instance stopped or abnormal |
+| Website monitoring / HTTP probe on `http://<EIP>:8080/login` (or the HTTPS URL) | not 200 or 403 for 3 checks |
+
+Install the Cloud Eye agent from the console (ECS → instance → **Monitoring → Install Agent**). Without it, disk and memory metrics aren't collected.
 
 ## Logs and status
 ```bash

@@ -49,8 +49,9 @@ check "internet: GitHub (app repo)"         reachable https://github.com
 check "network: SWR $SWR_REGISTRY"          reachable "https://${SWR_REGISTRY}/v2/"
 
 if [[ -n ${KUBECONFIG_FILE:-} ]]; then
-  check "kubectl reaches CCE (namespace $K8S_NAMESPACE)" \
-    sudo -u jenkins kubectl --kubeconfig "$KUBECONFIG_FILE" get namespace "$K8S_NAMESPACE"
+  # Namespaced call on purpose: works with the least-privilege ServiceAccount too.
+  check "kubectl reaches CCE (deployments in $K8S_NAMESPACE)" \
+    sudo -u jenkins kubectl --kubeconfig "$KUBECONFIG_FILE" -n "$K8S_NAMESPACE" get deployments
 else
   log "Skip CCE check (set KUBECONFIG_FILE=...)"
 fi

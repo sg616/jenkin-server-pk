@@ -12,9 +12,9 @@
 | Markup Formatter | Plain text |
 | Agents → TCP port for inbound agents | **Disable**. There are no inbound agents; builds run on the built-in node. |
 | CSRF Protection | enabled, which is the default |
-| Git Host Key Verification | **Accept first connection** |
+| Git Host Key Verification | Leave the default (*Known hosts file*). It only matters for SSH remotes, and both repos are cloned over HTTPS. |
 
-Add each extra user with **Manage Jenkins → Users → Create User**, then give them *Job/Build* in the matrix.
+Add each extra user with **Manage Jenkins → Users → Create User**, then give them *Job/Build* in the matrix. Give *Job/Configure* and *Overall/Administer* to admins only. The reasons are in [09-security-model.md](09-security-model.md).
 
 ## Manage Jenkins → Nodes → Built-In Node → Configure
 - **Number of executors: 2.** A single VM is enough here. The job sets `disableConcurrentBuilds`, so the same job never runs twice at once.

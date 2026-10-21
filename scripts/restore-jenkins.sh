@@ -6,7 +6,16 @@ require_root
 load_env
 
 archive=${1:-}
-[[ -f $archive ]] || die "Usage: $0 <backup.tar.gz>"
+[[ -f $archive ]] || die "Usage: $0 <backup.tar.gz | backup.tar.gz.gpg>"
+
+if [[ $archive == *.gpg ]]; then
+  log "Decrypting $archive (needs the private key in root's gpg keyring)"
+  umask 077
+  decrypted=$(mktemp --suffix=.tar.gz)
+  trap 'rm -f "$decrypted"' EXIT
+  gpg --batch --yes --output "$decrypted" --decrypt "$archive"
+  archive=$decrypted
+fi
 
 log "Stopping Jenkins"
 systemctl stop jenkins

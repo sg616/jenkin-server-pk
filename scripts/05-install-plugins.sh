@@ -34,6 +34,17 @@ java -jar "$PM_JAR" \
 
 chown -R jenkins:jenkins "$JENKINS_HOME_DIR/plugins"
 
+# Exact versions for disaster recovery: to rebuild an identical server, use this
+# file as --plugin-file instead of config/plugins.txt (it is in every backup).
+log "Recording installed plugin versions -> $JENKINS_HOME_DIR/INSTALLED_PLUGINS.txt"
+for f in "$JENKINS_HOME_DIR"/plugins/*.jpi "$JENKINS_HOME_DIR"/plugins/*.hpi; do
+  [[ -f $f ]] || continue
+  name=$(basename "${f%.*}")
+  ver=$(unzip -p "$f" META-INF/MANIFEST.MF | awk -F': ' '/^Plugin-Version:/ {print $2}' | tr -d '\r')
+  echo "$name:$ver"
+done | sort > "$JENKINS_HOME_DIR/INSTALLED_PLUGINS.txt"
+chown jenkins:jenkins "$JENKINS_HOME_DIR/INSTALLED_PLUGINS.txt"
+
 systemctl start jenkins
 wait_for_jenkins
 ok "Plugins installed: $(find "$JENKINS_HOME_DIR/plugins" -maxdepth 1 \( -name '*.jpi' -o -name '*.hpi' \) | wc -l) files"

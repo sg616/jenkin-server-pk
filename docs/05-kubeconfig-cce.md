@@ -35,8 +35,58 @@ The pipeline only **updates images** on Deployments that already exist. It doesn
 - `mysql-secret`, the DB credentials
 - Deployments and Services `backend`, `orders-backend`, `frontend` (from `k8s/*.yaml`)
 
-## Least privilege (recommended later)
-The console kubeconfig gives the IAM user's full cluster permissions. To limit Jenkins to `sample-app` only:
-- Create a ServiceAccount with a Role that can `get/list/patch/watch` Deployments, ReplicaSets and Pods in `sample-app`.
-- Build a kubeconfig from that ServiceAccount's token.
-- Store it as `cce-kubeconfig`.
+## Least privilege (recommended now)
+The console kubeconfig carries all of the IAM user's cluster permissions, and builds run on the Jenkins server ([09-security-model.md](09-security-model.md)). Give Jenkins a ServiceAccount that can only do what the pipeline needs in `sample-app`.
+
+Apply this once, as a cluster admin, from a machine with the console kubeconfig:
+```yaml
+# jenkins-deployer.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata: { name: jenkins-deployer, namespace: sample-app }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: { name: jenkins-deployer, namespace: sample-app }
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["apps"]
+    resources: ["replicasets", "controllerrevisions"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: { name: jenkins-deployer, namespace: sample-app }
+subjects: [{ kind: ServiceAccount, name: jenkins-deployer, namespace: sample-app }]
+roleRef: { kind: Role, name: jenkins-deployer, apiGroup: rbac.authorization.k8s.io }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-deployer-token
+  namespace: sample-app
+  annotations: { kubernetes.io/service-account.name: jenkins-deployer }
+type: kubernetes.io/service-account-token
+```
+Build a kubeconfig from the ServiceAccount token. This reuses the server and CA from the console kubeconfig:
+```bash
+kubectl apply -f jenkins-deployer.yaml
+SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' | base64 -d > ca.crt
+TOKEN=$(kubectl -n sample-app get secret jenkins-deployer-token -o jsonpath='{.data.token}' | base64 -d)
+
+KUBECONFIG=jenkins-kubeconfig kubectl config set-cluster cce --server="$SERVER" --certificate-authority=ca.crt --embed-certs=true
+KUBECONFIG=jenkins-kubeconfig kubectl config set-credentials jenkins-deployer --token="$TOKEN"
+KUBECONFIG=jenkins-kubeconfig kubectl config set-context jenkins --cluster=cce --user=jenkins-deployer --namespace=sample-app
+KUBECONFIG=jenkins-kubeconfig kubectl config use-context jenkins
+
+KUBECONFIG=jenkins-kubeconfig kubectl -n sample-app get deploy      # works
+KUBECONFIG=jenkins-kubeconfig kubectl get nodes                     # Forbidden, as intended
+rm ca.crt
+```
+Upload `jenkins-kubeconfig` as the `cce-kubeconfig` Secret file, replacing the console one, then delete the local copy. The token doesn't expire. To revoke it, delete the `jenkins-deployer-token` Secret.

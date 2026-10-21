@@ -7,7 +7,7 @@ Jenkins runs on a sky47 **ECS** VM (Elastic Cloud Server) in the **same VPC as t
 |---|---|
 | Region / AZ | `pk-isb-1`, the same as the CCE cluster |
 | Image | Ubuntu 24.04 LTS (22.04 also works) |
-| Flavor | at least 2 vCPU / 4 GB RAM. 4 vCPU / 8 GB is better: Maven and npm builds run inside Docker on this VM. |
+| Flavor | **4 vCPU / 8 GB RAM minimum.** Jenkins (`-Xmx2g`) and the Maven and npm Docker builds all run on this VM. 2 vCPU / 4 GB works only as a fallback: set `-Xmx1g` in `JENKINS_JAVA_OPTS` and build one service at a time. |
 | System disk | 50 GB or more, General Purpose SSD. Docker images and build cache grow over time. |
 | VPC / subnet | **The same VPC as CCE.** Any subnet that can route to the CCE API's internal IP. |
 | Key pair | an existing pair, e.g. `KeyPair-beta-sajeewa`, or a new one |

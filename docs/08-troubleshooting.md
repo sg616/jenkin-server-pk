@@ -47,6 +47,15 @@ kubectl -n sample-app logs <new-pod>
 - **CrashLoopBackOff**: check the app logs. Usually it's the DB connection (`mysql-secret`, `DB_HOST`) or the schema.
 - **Readiness probe failing**: check `/api/health` (backend) and `/orders-api/health` (orders-backend).
 
+## "... already exists in SWR. Use ACTION=deploy-existing"
+This is on purpose: image tags never change once pushed ([06-pipeline.md](06-pipeline.md#image-tags)). Either roll out that tag with `deploy-existing`, or pick a new `IMAGE_TAG` or git tag.
+
+## `REF` dropdown is empty or only shows jenkin-server-pk branches
+The dropdown lists refs from the app repo checked out by an **earlier** build. Run one build. Build #1, or any deploy, is enough. Check that the job's previous build ran the *Checkout app* stage. Also check that the `useRepository` pattern in the Jenkinsfile matches the app repo URL.
+
+## `docker manifest inspect` always says "not found"
+`deploy-existing` checks the tag using the SWR login. Check that the tag really exists (SWR console → image → Tags), and that `swr-login` has pull rights on `pk-beta-repo`.
+
 ## Job shows "Build Now" instead of "Build with Parameters"
 Run it once so the parameters get registered ([jobs/...](../jobs/sample-project-sky-47-deploy.md#first-run-registers-the-parameters)).
 

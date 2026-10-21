@@ -11,6 +11,7 @@ pipeline-graph-view
 # SCM
 git
 github
+git-parameter
 
 # Credentials
 credentials

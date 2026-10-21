@@ -27,12 +27,11 @@ else
 fi
 
 if [[ $ENABLE_UFW == true ]]; then
-  log "Configuring ufw: SSH and port $JENKINS_PORT from $ADMIN_CIDR, plus 80/443"
+  log "Configuring ufw: SSH, $JENKINS_PORT, 80 and 443 from $ADMIN_CIDR only"
   apt-get install -y ufw
-  ufw allow from "$ADMIN_CIDR" to any port 22 proto tcp
-  ufw allow from "$ADMIN_CIDR" to any port "$JENKINS_PORT" proto tcp
-  ufw allow 80/tcp
-  ufw allow 443/tcp
+  for port in 22 "$JENKINS_PORT" 80 443; do
+    ufw allow from "$ADMIN_CIDR" to any port "$port" proto tcp
+  done
   ufw --force enable
 else
   log "ufw left untouched (ENABLE_UFW=false). The sky47 security group controls access."

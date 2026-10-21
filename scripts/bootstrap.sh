@@ -11,10 +11,10 @@ for step in 00-prereqs 01-install-java 02-install-jenkins 03-install-docker 04-i
   bash "$SCRIPT_DIR/$step.sh"
 done
 
-ip=$(curl -fs --max-time 3 https://ifconfig.me || hostname -I | awk '{print $1}')
+private_ip=$(hostname -I | awk '{print $1}')
 echo
 ok "Bootstrap complete: $(cat "$JENKINS_HOME_DIR/INSTALLED_VERSION")"
-echo "  UI:              http://${ip}:${JENKINS_PORT}"
+echo "  UI:              http://<EIP from the sky47 console>:${JENKINS_PORT}  (private: http://${private_ip}:${JENKINS_PORT})"
 if [[ -f $JENKINS_HOME_DIR/secrets/initialAdminPassword ]]; then
   echo "  Unlock password: $(cat "$JENKINS_HOME_DIR/secrets/initialAdminPassword")"
 fi
