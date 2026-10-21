@@ -29,9 +29,14 @@ echo "0 2 * * * root /opt/jenkin-server-pk/scripts/backup-jenkins.sh" | sudo tee
 ```
 - The archive contains `secrets/` (`master.key`) and `credentials.xml`, which together decrypt every credential. The script always creates it with mode `0600`. Backups taken while Jenkins is running are fine: tar's "file changed as we read it" warnings are expected.
 - **Keep a copy off the VM.** If the VM is lost, the backups on its disk are lost too.
-  1. Create a gpg key on your own machine and import only the **public** key on the VM: `sudo gpg --import jenkins-backup.pub`.
-  2. Set `BACKUP_GPG_RECIPIENT=<key id or email>` in `config/jenkins.env`. Archives are then written as `*.tar.gz.gpg`.
-  3. Copy them to an OBS bucket, for example with `obsutil cp /opt/jenkins-backups/ obs://<bucket>/jenkins/ -r -f`, in the same cron job as the backup.
+  1. **Encryption key.** Create it on your own machine and import only the **public** key on the VM: `sudo gpg --import jenkins-backup.pub`. Set `BACKUP_GPG_RECIPIENT=<key id or email>`. tar is then streamed straight into gpg, so no unencrypted archive is ever written to disk. Archives are named `*.tar.gz.gpg`. If gpg fails, the partial file is deleted.
+  2. **Signing key on the VM.** Without a signature, anyone who can write to the bucket could plant an archive. Restoring it would run their code.
+     - Create the key: `sudo gpg --batch --passphrase '' --quick-gen-key 'jenkins-backup-signer' ed25519 sign never`
+     - Set `BACKUP_GPG_SIGNER=jenkins-backup-signer`.
+     - Set `BACKUP_GPG_SIGNER_FPR=<fingerprint>`. Get it with `sudo gpg --list-keys --with-colons jenkins-backup-signer | awk -F: '/^fpr/ {print $10; exit}'`.
+     - Note the fingerprint somewhere outside the VM as well. A rebuilt VM needs it to verify old archives.
+     - Import the signer's public key into root's keyring on any VM you restore on.
+  3. **Copy only encrypted files** to an OBS bucket, in the same cron job as the backup: `obsutil cp /opt/jenkins-backups/ obs://<bucket>/jenkins/ -r -f -include='*.gpg'`. Turn on bucket versioning, and give write access only to this VM's account.
 - `INSTALLED_PLUGINS.txt` (exact plugin versions, written by `05-install-plugins.sh`) and `INSTALLED_VERSION` are inside every backup.
 - You can also take a sky47 **EVS disk snapshot** of the VM before each major upgrade.
 
@@ -39,7 +44,12 @@ echo "0 2 * * * root /opt/jenkin-server-pk/scripts/backup-jenkins.sh" | sudo tee
 ```bash
 sudo bash scripts/restore-jenkins.sh /opt/jenkins-backups/jenkins-home-YYYYmmdd-HHMMSS.tar.gz[.gpg]
 ```
-For `.gpg` archives, the private key has to be in root's keyring during the restore. Remove it again afterwards.
+A restored `JENKINS_HOME` runs code at startup, so the restore script checks where the archive came from:
+- `.gpg` archives need a valid signature from `BACKUP_GPG_SIGNER_FPR`. The decryption private key also has to be in root's keyring during the restore. Remove it again afterwards.
+- Unsigned `.tar.gz` archives are only accepted from `BACKUP_DIR` on the same VM.
+- `ALLOW_UNSIGNED=1` skips both checks. Use it only for an archive you made and kept under your own control.
+
+The script also tests the archive with `tar -t` **before** stopping Jenkins, so a corrupt file changes nothing.
 
 To rebuild on a new VM **with identical versions**:
 1. Run `bootstrap.sh`. It installs the latest LTS.

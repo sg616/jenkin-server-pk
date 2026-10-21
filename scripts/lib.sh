@@ -44,6 +44,8 @@ load_env() {
   : "${BACKUP_DIR:=/opt/jenkins-backups}"
   : "${BACKUP_KEEP:=7}"
   : "${BACKUP_GPG_RECIPIENT:=}"
+  : "${BACKUP_GPG_SIGNER:=}"
+  : "${BACKUP_GPG_SIGNER_FPR:=}"
 }
 
 wait_for_jenkins() {
