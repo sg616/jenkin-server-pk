@@ -94,6 +94,14 @@ pipeline {
             echo 'First build: parameters registered. Use "Build with Parameters" from now on.'
             return
           }
+          // Every value below ends up inside sh steps (some with the kubeconfig bound),
+          // so reject anything that is not a plain service name / Docker tag.
+          if (params.SERVICES != 'all' && !services().containsKey(params.SERVICES)) {
+            error("Unknown SERVICES value: ${params.SERVICES}")
+          }
+          if (params.IMAGE_TAG?.trim() && !(params.IMAGE_TAG.trim() ==~ /^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/)) {
+            error('IMAGE_TAG must match [A-Za-z0-9_][A-Za-z0-9_.-]{0,127} (Docker tag rules)')
+          }
           if (params.ACTION == 'deploy') {
             def sha = dir('app') { sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim() }
             def branch = params.BRANCH.replaceAll('[^A-Za-z0-9_.-]', '-')
