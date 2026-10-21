@@ -27,9 +27,18 @@ if [[ $archive == *.gpg ]]; then
 
   expected=$(echo "${BACKUP_GPG_SIGNER_FPR:-}" | tr -d ' ' | tr '[:lower:]' '[:upper:]')
   if [[ -n $expected ]]; then
-    # VALIDSIG <signing-key-fpr> ... <primary-key-fpr>: accept either fingerprint.
-    grep -E "^\[GNUPG:\] VALIDSIG " "$status_file" | grep -qw "$expected" \
-      || die "No valid signature from $expected on $archive, refusing to restore"
+    [[ $expected =~ ^[0-9A-F]{40}$ ]] || die "BACKUP_GPG_SIGNER_FPR must be a full 40-hex-character fingerprint"
+    # VALIDSIG is also printed for expired/revoked keys, so additionally require
+    # GOODSIG and reject any bad/expired/revoked/error signature status.
+    if grep -qE '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG) ' "$status_file"; then
+      die "Signature on $archive is bad, expired or from a revoked key, refusing to restore"
+    fi
+    grep -qE '^\[GNUPG:\] GOODSIG ' "$status_file" \
+      || die "No good signature on $archive, refusing to restore"
+    # VALIDSIG <signing-key-fpr> <date> ... <primary-key-fpr>: exact match on either.
+    awk -v want="$expected" '$1 == "[GNUPG:]" && $2 == "VALIDSIG" && ($3 == want || $NF == want) {found = 1}
+                             END {exit !found}' "$status_file" \
+      || die "Archive is not signed by $expected, refusing to restore"
     ok "Signature verified ($expected)"
   elif [[ $allow_unsigned != 1 ]]; then
     die "BACKUP_GPG_SIGNER_FPR not set, cannot verify who made this archive (set it, or ALLOW_UNSIGNED=1)"
