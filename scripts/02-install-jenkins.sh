@@ -28,6 +28,11 @@ Environment="JENKINS_PORT=${JENKINS_PORT}"
 Environment="JAVA_OPTS=${JENKINS_JAVA_OPTS}"
 TimeoutStartSec=600
 EOF
+# Behind nginx, bind to 127.0.0.1 so the UI is reachable only through the proxy (TLS).
+if [[ -n $JENKINS_LISTEN_ADDRESS ]]; then
+  echo "Environment=\"JENKINS_LISTEN_ADDRESS=${JENKINS_LISTEN_ADDRESS}\"" \
+    >> /etc/systemd/system/jenkins.service.d/override.conf
+fi
 
 systemctl daemon-reload
 systemctl enable jenkins
