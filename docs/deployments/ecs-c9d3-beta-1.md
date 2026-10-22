@@ -8,7 +8,7 @@ Jenkins for sky47 CCE deploys, served at **https://jenkins.paykoko.pk**.
 | Private IP | 10.10.1.250 |
 | EIP | <EIP> |
 | Settings | [`config/servers/ecs-c9d3-beta-1.env`](../../config/servers/ecs-c9d3-beta-1.env), copied to `config/jenkins.env` |
-| Repo checkout used | `/home/ubuntu/beta-pk/jenkin-server-pk`, branch `beta-1-server-setup` |
+| Repo checkout used | `/home/ubuntu/beta-pk/jenkin-server-pk`, branch `beta-1-server-setup`; from step 9 on, `jenkins-casc-automation` |
 
 ## Starting state (2026-10-22)
 - A local docker-compose copy of the app was running from `/home/ubuntu/beta-pk/sample-project-sky-47-deploy-test`. That directory no longer contains a compose file. Restart policy `no`.
@@ -91,10 +91,22 @@ sudo bash scripts/08-tls-certbot.sh     # CERTBOT_EMAIL from config/servers/ecs-
   - `https://jenkins.paykoko.pk/login` returns 200 with a valid certificate chain
   - Listeners: nginx on :80 and :443, Jenkins on 127.0.0.1:8080 only
 
-### 9. Remaining (operator, in the browser)
-- [ ] Open https://jenkins.paykoko.pk and unlock it with `sudo cat /var/lib/jenkins/secrets/initialAdminPassword`. Choose plugins: **None**, then create the admin user.
+### 9. Credentials and job as code (2026-10-22 10:08 UTC, branch `jenkins-casc-automation`)
+- `sudo bash scripts/05-install-plugins.sh` (re-run) added `configuration-as-code` and `job-dsl`, for **99 plugins** in total.
+- The operator supplied the SWR long-term login and the CCE **internal** kubeconfig (API `10.10.1.103:5443`). They were written to `/etc/jenkins/secrets/{SWR_USER,SWR_PASS,cce-kubeconfig}` as `root:jenkins 0640`. No values are in git.
+- `verify.sh` with `SWR_USER`/`SWR_PASS`/`KUBECONFIG_FILE` reported **All checks passed**, including SWR docker login and `kubectl -n sample-app get deployments` as the jenkins user (backend, frontend, orders-backend, all 1/1).
+- `sudo bash scripts/09-jenkins-casc.sh`:
+  - installed `/etc/jenkins/casc/{credentials,jobs}.yaml`
+  - added the drop-in `/etc/systemd/system/jenkins.service.d/casc.conf`
+  - restarted Jenkins
+- Result: credentials `swr-login` (username resolved) and `cce-kubeconfig` were created, and job `sample-project-sky-47-deploy` was created. No Configuration as Code errors were logged. The admin user `sajeewadev` and the security realm were not touched.
+- **Open risk:** this kubeconfig is the console one. `kubectl auth can-i '*' '*' --all-namespaces` answers **yes**, so it has full cluster admin. Replace it with the least-privilege `jenkins-deployer` kubeconfig (`docs/05`) by overwriting `/etc/jenkins/secrets/cce-kubeconfig`, then reload Configuration as Code.
+- **Open risk:** authorization is still "Logged-in users can do anything". Switch to matrix security (`docs/03`).
+
+### 10. Remaining (operator, in the browser)
+- [x] Unlock Jenkins and create the admin user (`sajeewadev`).
 - [ ] Set the Jenkins URL to `https://jenkins.paykoko.pk/`.
 - [ ] Set up matrix security and turn sign-up off (`docs/03`).
-- [ ] Add the credentials `swr-login` and `cce-kubeconfig` (`docs/04`, `docs/05`).
-- [ ] Create the job (`jobs/sample-project-sky-47-deploy.md`), run build #1 to register it, then do a test deploy.
+- [x] Credentials and job: done as code in step 9.
+- [ ] Run **Build Now** once on `sample-project-sky-47-deploy` (it only registers the parameters), then do a test deploy with `SERVICES=frontend`.
 - [ ] Optional: `scripts/07-harden-ssh.sh`, and the daily backup cron (`docs/07`).
