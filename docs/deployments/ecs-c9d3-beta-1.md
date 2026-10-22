@@ -73,7 +73,28 @@ sudo bash scripts/06-nginx-reverse-proxy.sh
 - `curl -H 'Host: jenkins.paykoko.pk' http://127.0.0.1/login` returns 200 (`X-Jenkins: 2.580.1`).
 
 ### 7. DNS and security group (operator, sky47 console / DNS provider)
-- [ ] DNS: A record `jenkins.paykoko.pk` → `<EIP>`, TTL 300
-- [ ] Security group: inbound 80/tcp and 443/tcp from 0.0.0.0/0 (needed for Let's Encrypt HTTP-01 and renewals); remove 8080
+- [x] DNS: A record `jenkins.paykoko.pk` → `<EIP>`, TTL 300
+- [x] Security group: inbound 80/tcp and 443/tcp from 0.0.0.0/0 (needed for Let's Encrypt HTTP-01 and renewals); remove 8080
 
 At 04:09 UTC there was no DNS record yet. A request to http://<EIP>/ from the VM itself timed out, which could be the security group or the cloud network not routing a VM's traffic back to its own EIP.
+
+By 04:38 UTC the operator had done both. `jenkins.paykoko.pk` resolved to <EIP> via 8.8.8.8 and 1.1.1.1, and `http://jenkins.paykoko.pk/login` returned 200 from the internet path.
+
+### 8. HTTPS with Let's Encrypt (04:39 UTC)
+```bash
+sudo bash scripts/08-tls-certbot.sh     # CERTBOT_EMAIL from config/servers/ecs-c9d3-beta-1.env
+```
+- Certificate `CN=jenkins.paykoko.pk` from Let's Encrypt (issuer YE2), **expires 2027-01-20**. It renews automatically through `certbot.timer`, and `certbot renew --dry-run` succeeded.
+- certbot added the 443 server block to `/etc/nginx/sites-enabled/jenkins`, plus a 301 redirect from HTTP to HTTPS.
+- Checks:
+  - `http://jenkins.paykoko.pk/login` returns 301 to `https://…`
+  - `https://jenkins.paykoko.pk/login` returns 200 with a valid certificate chain
+  - Listeners: nginx on :80 and :443, Jenkins on 127.0.0.1:8080 only
+
+### 9. Remaining (operator, in the browser)
+- [ ] Open https://jenkins.paykoko.pk and unlock it with `sudo cat /var/lib/jenkins/secrets/initialAdminPassword`. Choose plugins: **None**, then create the admin user.
+- [ ] Set the Jenkins URL to `https://jenkins.paykoko.pk/`.
+- [ ] Set up matrix security and turn sign-up off (`docs/03`).
+- [ ] Add the credentials `swr-login` and `cce-kubeconfig` (`docs/04`, `docs/05`).
+- [ ] Create the job (`jobs/sample-project-sky-47-deploy.md`), run build #1 to register it, then do a test deploy.
+- [ ] Optional: `scripts/07-harden-ssh.sh`, and the daily backup cron (`docs/07`).
