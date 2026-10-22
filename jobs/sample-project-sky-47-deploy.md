@@ -6,7 +6,12 @@ This job is a Pipeline. It loads its Jenkinsfile from **this repo** (`jenkin-ser
 - The plugins from `config/plugins.txt` are installed, including `git-parameter`, which provides the branch/tag dropdown. `scripts/05-install-plugins.sh` does this.
 - The `swr-login` and `cce-kubeconfig` credentials exist. See [docs/04-credentials.md](../docs/04-credentials.md).
 
-## Create the job (UI)
+## Create the job as code (recommended)
+`sudo bash scripts/09-jenkins-casc.sh` creates the job from [`config/casc/jobs.yaml`](../config/casc/jobs.yaml) with exactly the settings below (Job DSL via Configuration as Code).
+
+It is **create-only**: the job is generated when it does not exist and is never rewritten, because regenerating it would drop the parameters the Jenkinsfile registered on build #1. To apply a change to `jobs.yaml`, delete the job, then reload Configuration as Code or restart Jenkins, and do the first run again.
+
+## Create the job (UI, fallback)
 1. **Dashboard → New Item**
    - Name: `sample-project-sky-47-deploy`
    - Type: **Pipeline** → OK

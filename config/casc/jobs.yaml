@@ -1,0 +1,25 @@
+# Pipeline job, created by Job DSL through Configuration as Code (scripts/09-jenkins-casc.sh).
+# Create-only: the job is generated when it does not exist yet and never
+# rewritten afterwards. Regenerating it would drop the parameters that the
+# Jenkinsfile registers on build #1. To apply a change here, delete the job
+# and reload Configuration as Code (or restart Jenkins).
+jobs:
+  - script: |
+      def name = 'sample-project-sky-47-deploy'
+      if (jenkins.model.Jenkins.get().getItem(name) == null) {
+        pipelineJob(name) {
+          description('Build, push to SWR and deploy sample-app services to sky47 CCE. Created by config/casc/jobs.yaml.')
+          definition {
+            cpsScm {
+              scm {
+                git {
+                  remote { url('https://github.com/sg616/jenkin-server-pk.git') }
+                  branch('*/main')
+                }
+              }
+              scriptPath('pipelines/sample-project-sky-47/Jenkinsfile')
+              lightweight(true)
+            }
+          }
+        }
+      }

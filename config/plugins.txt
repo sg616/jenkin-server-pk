@@ -25,3 +25,7 @@ ws-cleanup
 
 # Security
 matrix-auth
+
+# Configuration as code: credentials + jobs from config/casc/*.yaml (scripts/09-jenkins-casc.sh)
+configuration-as-code
+job-dsl
