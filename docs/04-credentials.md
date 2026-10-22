@@ -34,6 +34,29 @@ sudo bash scripts/09-jenkins-casc.sh      # also creates the pipeline job
 
 The UI steps below remain as a fallback, and describe how to obtain each value.
 
+## GitHub App
+`sg616/jenkin-server-pk` (the Jenkinsfile repo) is **private**. Jenkins reads it through a **GitHub App**, credential ID `github-app`. It is not tied to a person, it is read-only, and Jenkins mints a 1-hour token per use, so there is nothing to rotate. The app repo `sample-project-sky-47-deploy-test` is public and needs no credential.
+
+**Create the app** (once, in GitHub, signed in as the owner, `sg616`):
+1. Go to **Settings → Developer settings → GitHub Apps → New GitHub App**.
+   - Name: e.g. `jenkins-paykoko-beta` (must be unique on GitHub).
+   - Homepage URL: `https://jenkins.paykoko.pk`
+   - **Webhook: untick *Active*.** Builds are manual.
+   - Repository permissions: **Contents: Read-only**. Metadata: Read-only is set automatically. Leave everything else as *No access*.
+   - Where can this app be installed: **Only on this account**.
+   - Click **Create GitHub App**.
+2. On the app's page, note the **App ID**, a number.
+3. Under **Private keys**, click **Generate a private key**. A file named `<app>.<date>.private-key.pem` downloads.
+4. Click **Install App** (left menu) → **Install** → **Only select repositories** → `jenkin-server-pk` → **Install**.
+
+**Give it to Jenkins** (on the VM):
+```bash
+sudo bash -c 'printf %s <App ID> > /etc/jenkins/secrets/GITHUB_APP_ID'
+sudo install -m 0640 -o root -g jenkins ~/<app>.<date>.private-key.pem /etc/jenkins/secrets/
+sudo RECREATE_JOB=1 bash scripts/09-jenkins-casc.sh   # converts the key to PKCS#8, recreates the job with the credential
+```
+To add another private repo later, add it to the app's installation (step 4). Nothing changes in Jenkins.
+
 ---
 
 ## `swr-login`: SWR long-term login

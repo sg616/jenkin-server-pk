@@ -43,7 +43,7 @@ Then work through docs 03 → 05 and create the job by following [`jobs/sample-p
 - [ ] VM created in the CCE VPC, with an EIP and a locked-down security group: [01](docs/01-vm-provisioning.md)
 - [ ] `bootstrap.sh` run, and `verify.sh` green: [02](docs/02-install.md)
 - [ ] Wizard done, admin user created, matrix security on, sign-up off: [03](docs/03-initial-config.md)
-- [ ] Secret files in `/etc/jenkins/secrets` (SWR long-term key, internal-endpoint kubeconfig), then `scripts/09-jenkins-casc.sh` creates the `swr-login` + `cce-kubeconfig` credentials and the job: [04](docs/04-credentials.md#as-code-recommended), [05](docs/05-kubeconfig-cce.md)
+- [ ] Secret files in `/etc/jenkins/secrets` (SWR long-term key, internal-endpoint kubeconfig), then `scripts/09-jenkins-casc.sh` creates the `swr-login`, `cce-kubeconfig` and `github-app` (GitHub App for the private repo) credentials and the job: [04](docs/04-credentials.md#as-code-recommended), [05](docs/05-kubeconfig-cce.md)
 - [ ] First run of job `sample-project-sky-47-deploy` done (registers its parameters): [jobs](jobs/sample-project-sky-47-deploy.md)
 - [ ] Test deploy: `SERVICES=frontend`, then `ACTION=rollback`: [06](docs/06-pipeline.md)
 - [ ] Daily backup cron enabled, encrypted copy kept off the VM, Cloud Eye alarms set: [07](docs/07-operations.md)

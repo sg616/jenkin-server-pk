@@ -12,6 +12,8 @@ pipeline-graph-view
 git
 github
 git-parameter
+# GitHub App credentials (github-app) for the private pipeline repo
+github-branch-source
 
 # Credentials
 credentials

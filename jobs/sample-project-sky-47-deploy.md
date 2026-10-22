@@ -9,7 +9,9 @@ This job is a Pipeline. It loads its Jenkinsfile from **this repo** (`jenkin-ser
 ## Create the job as code (recommended)
 `sudo bash scripts/09-jenkins-casc.sh` creates the job from [`config/casc/jobs.yaml`](../config/casc/jobs.yaml) with exactly the settings below (Job DSL via Configuration as Code).
 
-It is **create-only**: the job is generated when it does not exist and is never rewritten, because regenerating it would drop the parameters the Jenkinsfile registered on build #1. To apply a change to `jobs.yaml`, delete the job, then reload Configuration as Code or restart Jenkins, and do the first run again.
+It is **create-only**: the job is generated when it does not exist and is never rewritten, because regenerating it would drop the parameters the Jenkinsfile registered on build #1. To apply a change to `jobs.yaml`, run `sudo RECREATE_JOB=1 bash scripts/09-jenkins-casc.sh`. It deletes the job, including its build history, and recreates it. Then do the first run again.
+
+The pipeline repo is private, so the job's SCM uses the `github-app` credential ([docs/04](../docs/04-credentials.md#github-app)).
 
 ## Create the job (UI, fallback)
 1. **Dashboard → New Item**
