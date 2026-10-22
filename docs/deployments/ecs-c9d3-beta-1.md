@@ -64,3 +64,16 @@ Step 05 took about 32 minutes. The plugin manager kept logging `Network is unrea
 - network reach to Docker Hub, GitHub and SWR
 
 The CCE and SWR-login checks were skipped because no credentials were passed in. `ss -ltnp` shows Jenkins on `127.0.0.1:8080` only.
+
+### 6. nginx reverse proxy (04:08 UTC)
+```bash
+sudo bash scripts/06-nginx-reverse-proxy.sh
+```
+- nginx 1.24.0 listens on :80 with `server_name jenkins.paykoko.pk` and proxies to 127.0.0.1:8080.
+- `curl -H 'Host: jenkins.paykoko.pk' http://127.0.0.1/login` returns 200 (`X-Jenkins: 2.580.1`).
+
+### 7. DNS and security group (operator, sky47 console / DNS provider)
+- [ ] DNS: A record `jenkins.paykoko.pk` → `<EIP>`, TTL 300
+- [ ] Security group: inbound 80/tcp and 443/tcp from 0.0.0.0/0 (needed for Let's Encrypt HTTP-01 and renewals); remove 8080
+
+At 04:09 UTC there was no DNS record yet. A request to http://<EIP>/ from the VM itself timed out, which could be the security group or the cloud network not routing a VM's traffic back to its own EIP.
