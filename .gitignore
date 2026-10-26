@@ -2,6 +2,8 @@
 config/jenkins.env
 *.env
 !config/jenkins.env.example
+# Per-server settings are committed on purpose (no secrets allowed in them)
+!config/servers/*.env
 secrets/
 *.ppk
 *.pem

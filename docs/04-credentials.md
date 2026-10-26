@@ -11,6 +11,52 @@ The **IDs must match exactly**, because the Jenkinsfile refers to them by ID.
 
 No secret is ever committed to git.
 
+## As code (recommended)
+`swr-login` and `cce-kubeconfig` are created by Configuration as Code from [`config/casc/credentials.yaml`](../config/casc/credentials.yaml). That file contains only variable names; the values live in root-owned files on the VM:
+
+| File | Contents |
+|---|---|
+| `/etc/jenkins/secrets/SWR_USER` | `pk-isb-1_<domain>@<AK>` (see below for how to get it) |
+| `/etc/jenkins/secrets/SWR_PASS` | the SWR login key |
+| `/etc/jenkins/secrets/cce-kubeconfig` | the kubeconfig from [05-kubeconfig-cce.md](05-kubeconfig-cce.md) |
+
+Create them without the values touching shell history, then apply:
+```bash
+sudo install -d -m 0750 -o root -g jenkins /etc/jenkins/secrets
+sudo bash -c 'read -rp "SWR user (pk-isb-1_<domain>@<AK>): " v; printf %s "$v" > /etc/jenkins/secrets/SWR_USER'
+sudo bash -c 'read -rsp "SWR login key: " v; printf %s "$v" > /etc/jenkins/secrets/SWR_PASS'
+sudo install -m 0640 -o root -g jenkins /path/to/kubeconfig.json /etc/jenkins/secrets/cce-kubeconfig
+sudo bash scripts/09-jenkins-casc.sh      # also creates the pipeline job
+```
+- **Rotation:** replace the file, then **Manage Jenkins → Configuration as Code → Reload existing configuration** (or restart Jenkins).
+- Configuration as Code owns the global credentials list: a credential added only in the UI is **removed** on the next restart or reload. Add new credentials to `credentials.yaml` instead.
+- The secret files are covered by the same rules as `credentials.xml`: never copy them off the VM unencrypted.
+
+The UI steps below remain as a fallback, and describe how to obtain each value.
+
+## GitHub App
+`sg616/jenkin-server-pk` (the Jenkinsfile repo) is **private**. Jenkins reads it through a **GitHub App**, credential ID `github-app`. It is not tied to a person, it is read-only, and Jenkins mints a 1-hour token per use, so there is nothing to rotate. The app repo `sample-project-sky-47-deploy-test` is public and needs no credential.
+
+**Create the app** (once, in GitHub, signed in as the owner, `sg616`):
+1. Go to **Settings → Developer settings → GitHub Apps → New GitHub App**.
+   - Name: e.g. `jenkins-paykoko-beta` (must be unique on GitHub).
+   - Homepage URL: `https://jenkins.paykoko.pk`
+   - **Webhook: untick *Active*.** Builds are manual.
+   - Repository permissions: **Contents: Read-only**. Metadata: Read-only is set automatically. Leave everything else as *No access*.
+   - Where can this app be installed: **Only on this account**.
+   - Click **Create GitHub App**.
+2. On the app's page, note the **App ID**, a number.
+3. Under **Private keys**, click **Generate a private key**. A file named `<app>.<date>.private-key.pem` downloads.
+4. Click **Install App** (left menu) → **Install** → **Only select repositories** → `jenkin-server-pk` → **Install**.
+
+**Give it to Jenkins** (on the VM):
+```bash
+sudo bash -c 'printf %s <App ID> > /etc/jenkins/secrets/GITHUB_APP_ID'
+sudo install -m 0640 -o root -g jenkins ~/<app>.<date>.private-key.pem /etc/jenkins/secrets/
+sudo RECREATE_JOB=1 bash scripts/09-jenkins-casc.sh   # converts the key to PKCS#8, recreates the job with the credential
+```
+To add another private repo later, add it to the app's installation (step 4). Nothing changes in Jenkins.
+
 ---
 
 ## `swr-login`: SWR long-term login

@@ -48,12 +48,15 @@ Then set **Manage Jenkins → System → Jenkins URL** to `http://<EIP>/`. In th
 ## TLS (do this before real use)
 On a plain-HTTP EIP, logins and session cookies cross the internet unencrypted. Pick one of these:
 - **sky47 ELB** (recommended, the same approach the app uses): create an HTTPS listener on 443 with your existing certificate from ELB → Certificates, and send traffic to the VM's private IP on port 80 (nginx). Point the security group's 80 at the ELB only, remove the EIP from the UI path, and set the Jenkins URL to `https://<domain>/`.
-- **certbot on the VM** (needs a public DNS name that points at the EIP):
+- **certbot on the VM** (needs a public DNS name that points at the EIP, and 80/443 open to the internet for validation and renewals):
   ```bash
-  sudo JENKINS_DOMAIN=jenkins.example.com bash scripts/06-nginx-reverse-proxy.sh
-  sudo apt-get install -y certbot python3-certbot-nginx
-  sudo certbot --nginx -d jenkins.example.com --redirect
+  # config/jenkins.env: JENKINS_DOMAIN=jenkins.example.com, CERTBOT_EMAIL=you@example.com,
+  #                     JENKINS_LISTEN_ADDRESS=127.0.0.1 (only nginx can reach Jenkins)
+  sudo bash scripts/02-install-jenkins.sh       # re-run to apply JENKINS_LISTEN_ADDRESS
+  sudo bash scripts/06-nginx-reverse-proxy.sh
+  sudo bash scripts/08-tls-certbot.sh           # checks DNS, gets the cert, adds the redirect, dry-runs renewal
   ```
+  Then set the Jenkins URL to `https://<domain>/` and remove 8080 from the security group.
 
 ## Optional: SSH hardening
 First check that key login works. Then:

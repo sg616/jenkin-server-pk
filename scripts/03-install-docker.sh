@@ -32,7 +32,9 @@ wait_for_jenkins
 log "Installing weekly docker cleanup cron (keeps build cache under control)"
 cat > /etc/cron.weekly/docker-prune <<'EOF'
 #!/bin/sh
-docker system prune -af --filter "until=168h" > /var/log/docker-prune.log 2>&1
+# Dangling images and old build cache only: the host may run other containers whose
+# stopped containers or tagged images must survive. The pipeline rmi's its own images.
+{ docker image prune -f; docker builder prune -f --filter "until=168h"; } > /var/log/docker-prune.log 2>&1
 EOF
 chmod +x /etc/cron.weekly/docker-prune
 
