@@ -12,7 +12,7 @@ jenkins --version | sudo tee /var/lib/jenkins/INSTALLED_VERSION
 ```
 Re-running `sudo bash scripts/bootstrap.sh` does the same thing, because every step can safely run twice.
 
-- Before upgrading, read https://www.jenkins.io/changelog-stable/ and https://www.jenkins.io/doc/upgrade-guide/. Watch for Java requirement changes: current LTS needs Java 21 or 25.
+- Before upgrading, read https://www.jenkins.io/changelog-stable/ and https://www.jenkins.io/doc/upgrade-guide/. Watch for Java requirement changes: current LTS needs Java 21 or 25, and the host runs 25 (Java 21 support ends Sep 2027, Java 25 in Sep 2029).
 - To freeze the version (for example during a release week), run `sudo apt-mark hold jenkins`. Release it again with `sudo apt-mark unhold jenkins`.
 - If a plugin update breaks a job, pin that plugin in `plugins.txt` (`name:version`), run `05-install-plugins.sh` again, and commit.
 

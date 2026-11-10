@@ -4,7 +4,7 @@ This repo holds everything needed to build the **Jenkins server** that builds an
 [`sample-project-sky-47-deploy-test`](https://github.com/sg616/sample-project-sky-47-deploy-test)
 to **sky47 CCE** (Kubernetes) in region `pk-isb-1`.
 
-- Jenkins: **latest stable LTS** from the official `debian-stable` repo. It runs natively under systemd, on Java 21.
+- Jenkins: **latest stable LTS** from the official `debian-stable` repo. It runs natively under systemd, on Java 25.
 - Host: a sky47 ECS Ubuntu VM in the **same VPC as the CCE cluster**, because the cluster API is private.
 - Deploys: started by hand, as a parameterized pipeline. There are no webhooks.
 

@@ -110,3 +110,46 @@ sudo bash scripts/08-tls-certbot.sh     # CERTBOT_EMAIL from config/servers/ecs-
 - [x] Credentials and job: done as code in step 9.
 - [ ] Run **Build Now** once on `sample-project-sky-47-deploy` (it only registers the parameters), then do a test deploy with `SERVICES=frontend`.
 - [ ] Optional: `scripts/07-harden-ssh.sh`, and the daily backup cron (`docs/07`).
+
+### 11. Java 25 upgrade (2026-11-10, repo branch `java-25-upgrade`)
+Jenkins LTS supports Java 21 and 25; 21 support ends Sep 2027, 25 in Sep 2029. Jenkins **2.580.1** was already
+running here, which supports 25, so only the JVM package changed. Repo commit: `JAVA_PACKAGE=openjdk-25-jre`,
+and the gates in `01-install-java.sh` / `verify.sh` now require Java >= 25.
+```bash
+sudo bash scripts/backup-jenkins.sh      # rollback point: /opt/jenkins-backups/jenkins-home-20261110-141759.tar.gz (153M)
+sudo apt-get update && sudo bash scripts/01-install-java.sh
+sudo systemctl restart jenkins
+sudo bash scripts/verify.sh
+```
+- Before: `openjdk 21.0.13.0.3` → after: **`openjdk 25.0.5.0.3` (`openjdk-25-jre` 25.0.5.0.3+1-1~24.04.1 from `noble-updates`)**.
+- `update-alternatives` is in **auto** mode and switched on its own (java-25 priority 2511 > java-21 2111), so
+  `/usr/bin/java` → `/usr/lib/jvm/java-25-openjdk-amd64/bin/java`. Nothing had to be set by hand. This matters because
+  the jenkins unit leaves `JAVA_HOME` unset, so Jenkins runs whatever `/usr/bin/java` points at.
+- Jenkins restarted at 14:19 UTC: "Jenkins is fully up and running", Configuration as Code and the Job DSL job
+  re-applied with no errors, `https://jenkins.paykoko.pk/login` 200 (`X-Jenkins: 2.580.1`).
+- `verify.sh`: **All checks passed** (service, `java >= 25`, docker as the `jenkins` user, kubectl, Docker Hub /
+  GitHub / SWR reachability).
+
+**Plugin refresh (15:42 UTC)**, per Jenkins' Java 25 guidance to move plugins to releases built against the
+current Jenkins:
+```bash
+sudo bash scripts/05-install-plugins.sh     # ~75 min, stops and restarts Jenkins itself
+```
+- **99 plugins**, no download or checksum failures, exact versions in `/var/lib/jenkins/INSTALLED_PLUGINS.txt`.
+- Jenkins came back on HTTP 200 with no `SEVERE` / "Failed to load" / `ClassNotFound` / `InaccessibleObjectException`
+  in the log: no plugin needed a change for Java 25.
+
+**Java 21 removed (15:44 UTC)**
+```bash
+sudo apt-get -s purge openjdk-21-jre openjdk-21-jre-headless   # dry run: only those two packages
+sudo apt-get purge -y openjdk-21-jre openjdk-21-jre-headless && sudo apt-get autoremove -y
+```
+Nothing else depended on them. `/usr/lib/jvm` now holds java-25 only, `update-alternatives` still auto and pointing
+at it, Jenkins stayed up, `verify.sh` green again. **Rollback from here needs a reinstall:**
+`sudo apt-get install -y openjdk-21-jre && sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java && sudo systemctl restart jenkins`
+(and `JAVA_PACKAGE` back to `openjdk-21-jre` in `config/jenkins.env`), or restore the step-11 backup archive.
+
+**Still open from this change:**
+- [ ] Trigger one `sample-project-sky-47-deploy` build to exercise docker + kubectl under the new JVM. Needs the
+      admin login, so it is a browser step for the operator. `verify.sh` already proves docker (as the `jenkins`
+      user), kubectl and SWR/Docker Hub/GitHub reachability on Java 25.

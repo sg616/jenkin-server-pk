@@ -21,10 +21,10 @@ jenkins_serving() {
   [[ $code != 000 && $code != 503 ]]
 }
 
-java_21_plus() {
+java_25_plus() {
   local major
   major=$(java -version 2>&1 | awk -F'"' '/version/ {split($2, v, "."); print v[1]}')
-  [[ $major -ge 21 ]]
+  [[ $major -ge 25 ]]
 }
 
 # Any HTTP answer (even 401) proves network reachability; curl exit 0 with -s and no -f.
@@ -41,7 +41,7 @@ swr_login() {
 
 check "jenkins service active"              systemctl is-active --quiet jenkins
 check "jenkins serving on :$JENKINS_PORT"   jenkins_serving
-check "java >= 21"                          java_21_plus
+check "java >= 25"                          java_25_plus
 check "docker usable by jenkins user"       sudo -u jenkins docker info
 check "kubectl installed"                   kubectl version --client
 check "internet: Docker Hub (base images)"  reachable https://registry-1.docker.io/v2/

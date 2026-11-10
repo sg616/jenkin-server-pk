@@ -4,7 +4,8 @@ Start with `sudo bash scripts/verify.sh`. It tells you which layer is broken.
 
 ## Jenkins won't start
 - `journalctl -u jenkins -n 200`
-- **"failed to find a valid Java installation"**: Java is missing or older than 21. Run `scripts/01-install-java.sh`, then `systemctl restart jenkins`.
+- **"failed to find a valid Java installation"**: Java is missing, or older than the 21/25 that Jenkins supports. Run `scripts/01-install-java.sh`, then `systemctl restart jenkins`.
+- **Jenkins starts on the wrong JVM**: `JAVA_HOME` is not set, so Jenkins uses whatever `/usr/bin/java` points at. With more than one JDK installed, check `update-alternatives --display java` and switch with `update-alternatives --set java /usr/lib/jvm/java-25-openjdk-amd64/bin/java`.
 - **Port already in use**: change `JENKINS_PORT` in `config/jenkins.env`, then run `scripts/02-install-jenkins.sh` again.
 - Out of memory: lower `-Xmx` in `JENKINS_JAVA_OPTS`, or give the VM more RAM.
 
