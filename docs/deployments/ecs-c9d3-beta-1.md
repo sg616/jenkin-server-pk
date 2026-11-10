@@ -130,10 +130,26 @@ sudo bash scripts/verify.sh
 - `verify.sh`: **All checks passed** (service, `java >= 25`, docker as the `jenkins` user, kubectl, Docker Hub /
   GitHub / SWR reachability).
 
+**Plugin refresh (15:42 UTC)**, per Jenkins' Java 25 guidance to move plugins to releases built against the
+current Jenkins:
+```bash
+sudo bash scripts/05-install-plugins.sh     # ~75 min, stops and restarts Jenkins itself
+```
+- **99 plugins**, no download or checksum failures, exact versions in `/var/lib/jenkins/INSTALLED_PLUGINS.txt`.
+- Jenkins came back on HTTP 200 with no `SEVERE` / "Failed to load" / `ClassNotFound` / `InaccessibleObjectException`
+  in the log: no plugin needed a change for Java 25.
+
+**Java 21 removed (15:44 UTC)**
+```bash
+sudo apt-get -s purge openjdk-21-jre openjdk-21-jre-headless   # dry run: only those two packages
+sudo apt-get purge -y openjdk-21-jre openjdk-21-jre-headless && sudo apt-get autoremove -y
+```
+Nothing else depended on them. `/usr/lib/jvm` now holds java-25 only, `update-alternatives` still auto and pointing
+at it, Jenkins stayed up, `verify.sh` green again. **Rollback from here needs a reinstall:**
+`sudo apt-get install -y openjdk-21-jre && sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java && sudo systemctl restart jenkins`
+(and `JAVA_PACKAGE` back to `openjdk-21-jre` in `config/jenkins.env`), or restore the step-11 backup archive.
+
 **Still open from this change:**
-- [ ] `sudo bash scripts/05-install-plugins.sh` — refresh plugins to releases built against current Jenkins
-      (Jenkins' Java 25 guidance). Takes ~30 min and restarts Jenkins.
-- [ ] `sudo apt-get purge openjdk-21-jre openjdk-21-jre-headless && sudo apt-get autoremove` — do a `-s` dry run
-      first. Until then Java 21 is still installed, which also makes the rollback a one-liner:
-      `sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java && sudo systemctl restart jenkins`.
-- [ ] Trigger one `sample-project-sky-47-deploy` build to exercise docker + kubectl under the new JVM.
+- [ ] Trigger one `sample-project-sky-47-deploy` build to exercise docker + kubectl under the new JVM. Needs the
+      admin login, so it is a browser step for the operator. `verify.sh` already proves docker (as the `jenkins`
+      user), kubectl and SWR/Docker Hub/GitHub reachability on Java 25.
