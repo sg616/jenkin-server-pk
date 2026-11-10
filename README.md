@@ -62,6 +62,8 @@ Then work through docs 03 → 05 and create the job by following [`jobs/sample-p
 | `scripts/backup-jenkins.sh`, `restore-jenkins.sh` | JENKINS_HOME backup and restore |
 | `pipelines/sample-project-sky-47/Jenkinsfile` | Pipeline with three actions: `deploy` (build a branch/tag, push, roll out), `deploy-existing` (roll out a tag already in SWR) and `rollback` |
 | `jobs/sample-project-sky-47-deploy.md` | The job: created by `09-jenkins-casc.sh`, or by hand with these steps |
+| `pipelines/koko-bpo-sky47/*.Jenkinsfile` | The KOKO BPO portal stack: one pipeline per service (backend, SPA, Keycloak). Same three actions, plus an `ENV` parameter so one job serves every environment |
+| `jobs/koko-bpo-sky47-deploy.md` | Those three jobs, their `ENV` mechanism, and the extra credential they need |
 | `docs/` | Provisioning, install, config, credentials, kubeconfig, pipeline, operations, troubleshooting, security model |
 | `docs/deployments/<host>.md` | Log of what was done on each real server: commands, manual console steps, versions, verify results |
 
