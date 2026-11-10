@@ -110,3 +110,30 @@ sudo bash scripts/08-tls-certbot.sh     # CERTBOT_EMAIL from config/servers/ecs-
 - [x] Credentials and job: done as code in step 9.
 - [ ] Run **Build Now** once on `sample-project-sky-47-deploy` (it only registers the parameters), then do a test deploy with `SERVICES=frontend`.
 - [ ] Optional: `scripts/07-harden-ssh.sh`, and the daily backup cron (`docs/07`).
+
+### 11. Java 25 upgrade (2026-11-10, repo branch `java-25-upgrade`)
+Jenkins LTS supports Java 21 and 25; 21 support ends Sep 2027, 25 in Sep 2029. Jenkins **2.580.1** was already
+running here, which supports 25, so only the JVM package changed. Repo commit: `JAVA_PACKAGE=openjdk-25-jre`,
+and the gates in `01-install-java.sh` / `verify.sh` now require Java >= 25.
+```bash
+sudo bash scripts/backup-jenkins.sh      # rollback point: /opt/jenkins-backups/jenkins-home-20261110-141759.tar.gz (153M)
+sudo apt-get update && sudo bash scripts/01-install-java.sh
+sudo systemctl restart jenkins
+sudo bash scripts/verify.sh
+```
+- Before: `openjdk 21.0.13.0.3` → after: **`openjdk 25.0.5.0.3` (`openjdk-25-jre` 25.0.5.0.3+1-1~24.04.1 from `noble-updates`)**.
+- `update-alternatives` is in **auto** mode and switched on its own (java-25 priority 2511 > java-21 2111), so
+  `/usr/bin/java` → `/usr/lib/jvm/java-25-openjdk-amd64/bin/java`. Nothing had to be set by hand. This matters because
+  the jenkins unit leaves `JAVA_HOME` unset, so Jenkins runs whatever `/usr/bin/java` points at.
+- Jenkins restarted at 14:19 UTC: "Jenkins is fully up and running", Configuration as Code and the Job DSL job
+  re-applied with no errors, `https://jenkins.paykoko.pk/login` 200 (`X-Jenkins: 2.580.1`).
+- `verify.sh`: **All checks passed** (service, `java >= 25`, docker as the `jenkins` user, kubectl, Docker Hub /
+  GitHub / SWR reachability).
+
+**Still open from this change:**
+- [ ] `sudo bash scripts/05-install-plugins.sh` — refresh plugins to releases built against current Jenkins
+      (Jenkins' Java 25 guidance). Takes ~30 min and restarts Jenkins.
+- [ ] `sudo apt-get purge openjdk-21-jre openjdk-21-jre-headless && sudo apt-get autoremove` — do a `-s` dry run
+      first. Until then Java 21 is still installed, which also makes the rollback a one-liner:
+      `sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java && sudo systemctl restart jenkins`.
+- [ ] Trigger one `sample-project-sky-47-deploy` build to exercise docker + kubectl under the new JVM.
