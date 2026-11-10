@@ -32,7 +32,7 @@ if (( ${#missing[@]} )); then
     sudo install -m 0640 -o root -g jenkins /path/to/kubeconfig.json $SECRETS_DIR/cce-kubeconfig
     sudo bash -c 'printf %s <app-id> > $SECRETS_DIR/GITHUB_APP_ID'
     sudo bash -c 'read -rp \"GitHub login for DarazAPACIG read access: \" v; printf %s \"\$v\" > $SECRETS_DIR/GITHUB_DARAZ_USER'
-    sudo bash -c 'read -rsp \"GitHub PAT with repo read scope: \" v; printf %s \"\$v\" > $SECRETS_DIR/GITHUB_DARAZ_TOKEN'
+    sudo bash -c 'read -rsp \"GitHub fine-grained PAT, 4 repos, Contents:Read-only: \" v; printf %s \"\$v\" > $SECRETS_DIR/GITHUB_DARAZ_TOKEN'
   and the GitHub App private key (docs/04-credentials.md#github-app)"
 fi
 

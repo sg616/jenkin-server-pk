@@ -26,7 +26,7 @@ No secret is ever committed to git.
 | `/etc/jenkins/secrets/SWR_PASS` | the SWR login key |
 | `/etc/jenkins/secrets/cce-kubeconfig` | the kubeconfig from [05-kubeconfig-cce.md](05-kubeconfig-cce.md) |
 | `/etc/jenkins/secrets/GITHUB_DARAZ_USER` | GitHub login with read access to the `DarazAPACIG` org |
-| `/etc/jenkins/secrets/GITHUB_DARAZ_TOKEN` | a PAT for that account with `repo` read scope |
+| `/etc/jenkins/secrets/GITHUB_DARAZ_TOKEN` | a **fine-grained** PAT for that account, limited to the four repos below, `Contents: Read-only`, with an expiry |
 
 Create them without the values touching shell history, then apply:
 ```bash
@@ -35,18 +35,39 @@ sudo bash -c 'read -rp "SWR user (pk-isb-1_<domain>@<AK>): " v; printf %s "$v" >
 sudo bash -c 'read -rsp "SWR login key: " v; printf %s "$v" > /etc/jenkins/secrets/SWR_PASS'
 sudo install -m 0640 -o root -g jenkins /path/to/kubeconfig.json /etc/jenkins/secrets/cce-kubeconfig
 sudo bash -c 'read -rp "GitHub login for DarazAPACIG read access: " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_USER'
-sudo bash -c 'read -rsp "GitHub PAT (repo read scope): " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_TOKEN'
+sudo bash -c 'read -rsp "GitHub fine-grained PAT (Contents: Read-only): " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_TOKEN'
 sudo bash scripts/09-jenkins-casc.sh      # also creates the pipeline jobs
 ```
 
 `scripts/09-jenkins-casc.sh` refuses to run until all of these exist, and names
 the ones that are missing.
 
-A GitHub App installed on the `DarazAPACIG` org would be preferable to a
-personal PAT — it is not tied to a person and Jenkins mints a short-lived token
-per use, exactly as `github-app` does for `sg616` — but installing it needs an
-org owner. Until then, scope the PAT to read-only and rotate it on the same
-schedule as the other credentials (see [Rotation](#rotation)).
+### Scope the `DarazAPACIG` token narrowly
+
+This credential only ever **clones four repositories**, so give it nothing more:
+
+- `DarazAPACIG/bnpl-bpo-portal-service`
+- `DarazAPACIG/bnpl-bpo-portal-web`
+- `DarazAPACIG/bnpl-keycloak-service`
+- `DarazAPACIG/bnpl-build-config`
+
+Use a **fine-grained** PAT: *Only select repositories* → those four, repository
+permission **`Contents: Read-only`**, and set an expiry. Then rotate it on the
+same schedule as the other credentials (see [Rotation](#rotation)).
+
+**Do not use a classic PAT with the `repo` scope.** That scope is read *and
+write* across every repository the account can reach, including ones unrelated
+to this deployment — a Jenkins compromise would then mean pushable access to the
+whole org's code.
+
+Better still, ask a `DarazAPACIG` owner to install a **GitHub App** on the org
+and replace this with a `gitHubApp` credential (`owner: "DarazAPACIG"`), exactly
+as `github-app` works for `sg616`: not tied to a person, and the token is
+short-lived. The PAT is the fallback for when that approval is not available.
+
+Note this credential sits in the **global** store, like every other credential
+here, so any job on this controller can bind it. If the BPO jobs are ever moved
+into their own Jenkins folder, make it folder-scoped instead.
 - **Rotation:** replace the file, then **Manage Jenkins → Configuration as Code → Reload existing configuration** (or restart Jenkins).
 - Configuration as Code owns the global credentials list: a credential added only in the UI is **removed** on the next restart or reload. Add new credentials to `credentials.yaml` instead.
 - The secret files are covered by the same rules as `credentials.xml`: never copy them off the VM unencrypted.

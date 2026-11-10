@@ -30,13 +30,18 @@ hand once, with `kubectl apply -k`. The pipelines only ever run
 
   ```sh
   sudo bash -c 'read -rp "GitHub login: " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_USER'
-  sudo bash -c 'read -rsp "GitHub PAT (repo read scope): " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_TOKEN'
+  sudo bash -c 'read -rsp "GitHub fine-grained PAT (Contents: Read-only): " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_TOKEN'
   sudo bash scripts/09-jenkins-casc.sh
   ```
 
-  A GitHub App installed on the `DarazAPACIG` org would be better than a
-  personal PAT — it is not tied to a person and the token is short-lived — but
-  that needs an org owner to install it.
+  Scope that token to **only** the four repos it clones
+  (`bnpl-bpo-portal-service`, `bnpl-bpo-portal-web`, `bnpl-keycloak-service`,
+  `bnpl-build-config`) with `Contents: Read-only` and an expiry date. A classic
+  PAT with the `repo` scope would grant read *and write* across the whole org,
+  which this does not need. Better still, have a `DarazAPACIG` owner install a
+  GitHub App and use a `gitHubApp` credential instead — not tied to a person,
+  short-lived tokens. See
+  [docs/04-credentials.md](../docs/04-credentials.md#scope-the-darazapacig-token-narrowly).
 - The target namespace, Secrets and Deployments already exist in the cluster
   (see `k8-sky47-dev/README.md`). Until they do, the deploy stage fails on
   `kubectl get deployment/...`.
