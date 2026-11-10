@@ -128,6 +128,28 @@ shapes, which is why there are three files:
 Deploy **Keycloak first** on a fresh environment: the backend fetches its JWKS
 at startup.
 
+## Planned follow-up: remove the build-config and Maven stages
+
+**Once the sky47 deployment is proven working**, the backend pipeline should lose
+both of its extra stages. They exist only because the app Dockerfile was left
+unchanged: it `COPY`s two files that are not in the app repo, and it expects a
+prebuilt `target/` while this VM has no JDK.
+
+Fix it at the source instead — make `bnpl-bpo-portal-service/Dockerfile`
+self-contained (multi-stage, build the jar in `maven:3.8-eclipse-temurin-11`, run
+it with `ENTRYPOINT ["java","-jar","app.jar"]`, log straight to stdout, no
+supervisord). Then delete from `bpo-portal.Jenkinsfile`:
+
+- the `Fetch build config` stage
+- the `Build jar` stage
+- `CONFIG_REPO`, `CONFIG_DIR`, and the `configBranch` key in `envs()`
+
+and delete the `dev-sky47` branch of `bnpl-build-config`. The backend pipeline
+then looks like the Keycloak one: checkout, build, push, deploy.
+
+This also drops `bnpl-build-config` from the list of repos
+`github-darazapacig` needs to read.
+
 ## Gotchas
 
 - **Realm import is one-shot.** Redeploying the Keycloak image does *not*
