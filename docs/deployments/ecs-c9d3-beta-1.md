@@ -149,6 +149,24 @@ at it, Jenkins stayed up, `verify.sh` green again. **Rollback from here needs a 
 `sudo apt-get install -y openjdk-21-jre && sudo update-alternatives --set java /usr/lib/jvm/java-21-openjdk-amd64/bin/java && sudo systemctl restart jenkins`
 (and `JAVA_PACKAGE` back to `openjdk-21-jre` in `config/jenkins.env`), or restore the step-11 backup archive.
 
+**The second clone at `/opt/jenkin-server-pk` (16:02 UTC)**, the one `docs/07` tells operators to run upgrades
+from. It was still on Java 21 (`JAVA_PACKAGE=openjdk-21-jre` in its `scripts/lib.sh` and its own
+`config/jenkins.env`), so following that doc would have reinstalled the JRE purged above. Its `main` turned out to be
+an **unrelated lineage** (own root commit, 5 commits, no common ancestor with `origin/main`), so a fast-forward was
+impossible and nothing in it was unique — `git diff HEAD origin/main` deleted no files.
+```bash
+cd /opt/jenkin-server-pk
+sudo git fetch origin
+sudo git checkout -b main-upstream origin/main          # old main (d3b4919) left in place, not reset
+sudo mv -n config/jenkins.env config/jenkins.env.pre-java25-20261110
+sudo install -m 644 config/servers/ecs-c9d3-beta-1.env config/jenkins.env
+sudo bash scripts/verify.sh                              # All checks passed, java >= 25
+```
+That clone is now on `main-upstream` tracking `origin/main`, so `sudo git pull` there works from now on. Copying the
+per-host env also fixed three stale values it had: `KUBECTL_VERSION=v1.31` (invalid, would have failed step 04),
+a missing `JENKINS_LISTEN_ADDRESS`, and `JENKINS_DOMAIN=_`. Its obsolete `main` branch and the old env file are
+still there if anything needs checking; both can be deleted once nobody misses them.
+
 **Still open from this change:**
 - [ ] Trigger one `sample-project-sky-47-deploy` build to exercise docker + kubectl under the new JVM. Needs the
       admin login, so it is a browser step for the operator. `verify.sh` already proves docker (as the `jenkins`
