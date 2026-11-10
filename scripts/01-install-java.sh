@@ -9,6 +9,6 @@ log "Installing $JAVA_PACKAGE"
 DEBIAN_FRONTEND=noninteractive apt-get install -y fontconfig "$JAVA_PACKAGE"
 
 java_major=$(java -version 2>&1 | awk -F'"' '/version/ {split($2, v, "."); print v[1]}')
-[[ $java_major -ge 21 ]] || die "Java $java_major found; current Jenkins LTS needs Java 21 or 25"
+[[ $java_major -ge 25 ]] || die "Java $java_major found; this repo installs Java 25 (Jenkins LTS supports 21 or 25)"
 java -version 2>&1 | head -1
 ok "Java $java_major installed"

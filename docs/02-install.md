@@ -17,7 +17,7 @@ sudo bash scripts/bootstrap.sh
 | Step | Script | Result |
 |---|---|---|
 | 0 | `00-prereqs.sh` | Base packages and timezone. Adds swap if RAM < 4 GB. Sets up ufw only if `ENABLE_UFW=true`. |
-| 1 | `01-install-java.sh` | OpenJDK 21. Current LTS needs Java 21 or 25 (Java 17 support ended at 2.555.1). |
+| 1 | `01-install-java.sh` | OpenJDK 25. Current LTS needs Java 21 or 25 (Java 17 support ended at 2.555.1); this repo installs 25, which is supported until Sep 2029. |
 | 2 | `02-install-jenkins.sh` | Adds the **debian-stable** (LTS) repo and installs the **newest LTS**, with no version pin. Writes a systemd override for the port and JAVA_OPTS. |
 | 3 | `03-install-docker.sh` | Installs Docker CE and buildx, and adds `jenkins` to the `docker` group. Adds a weekly prune cron job. |
 | 4 | `04-install-kubectl.sh` | Installs kubectl (`KUBECTL_VERSION`, or the latest stable) and verifies its checksum |

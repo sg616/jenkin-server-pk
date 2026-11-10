@@ -38,7 +38,7 @@ load_env() {
   : "${JENKINS_PORT:=8080}"
   : "${JENKINS_LISTEN_ADDRESS:=}"
   : "${JENKINS_JAVA_OPTS:=-Djava.awt.headless=true -Xms512m -Xmx2g}"
-  : "${JAVA_PACKAGE:=openjdk-21-jre}"
+  : "${JAVA_PACKAGE:=openjdk-25-jre}"
   : "${KUBECTL_VERSION:=}"
   : "${PLUGIN_MANAGER_VERSION:=}"
   : "${JENKINS_DOMAIN:=_}"
