@@ -21,7 +21,7 @@ done
 
 install -d -m 0750 -o root -g jenkins "$SECRETS_DIR"
 missing=()
-for s in SWR_USER SWR_PASS cce-kubeconfig GITHUB_APP_ID; do
+for s in SWR_USER SWR_PASS cce-kubeconfig GITHUB_APP_ID GITHUB_DARAZ_USER GITHUB_DARAZ_TOKEN; do
   [[ -s $SECRETS_DIR/$s ]] || missing+=("$s")
 done
 if (( ${#missing[@]} )); then
@@ -31,6 +31,8 @@ if (( ${#missing[@]} )); then
     sudo bash -c 'read -rsp \"SWR login key: \" v; printf %s \"\$v\" > $SECRETS_DIR/SWR_PASS'
     sudo install -m 0640 -o root -g jenkins /path/to/kubeconfig.json $SECRETS_DIR/cce-kubeconfig
     sudo bash -c 'printf %s <app-id> > $SECRETS_DIR/GITHUB_APP_ID'
+    sudo bash -c 'read -rp \"GitHub login for DarazAPACIG read access: \" v; printf %s \"\$v\" > $SECRETS_DIR/GITHUB_DARAZ_USER'
+    sudo bash -c 'read -rsp \"GitHub fine-grained PAT, 4 repos, Contents:Read-only: \" v; printf %s \"\$v\" > $SECRETS_DIR/GITHUB_DARAZ_TOKEN'
   and the GitHub App private key (docs/04-credentials.md#github-app)"
 fi
 

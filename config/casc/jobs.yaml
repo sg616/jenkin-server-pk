@@ -1,8 +1,13 @@
-# Pipeline job, created by Job DSL through Configuration as Code (scripts/09-jenkins-casc.sh).
-# Create-only: the job is generated when it does not exist yet and never
+# Pipeline jobs, created by Job DSL through Configuration as Code (scripts/09-jenkins-casc.sh).
+# Create-only: a job is generated when it does not exist yet and never
 # rewritten afterwards. Regenerating it would drop the parameters that the
 # Jenkinsfile registers on build #1. To apply a change here:
-#   sudo RECREATE_JOB=1 bash scripts/09-jenkins-casc.sh   (deletes and recreates the job)
+#   sudo RECREATE_JOB=1 bash scripts/09-jenkins-casc.sh   (deletes and recreates the jobs)
+#
+# All jobs read their Jenkinsfile from THIS repo, not from the app repo, so the
+# app repos carry no CI files. The `github-app` credential below is for this
+# repo (owner sg616). The app repos live in the DarazAPACIG org and are cloned
+# by the pipelines themselves with `github-darazapacig` -- see credentials.yaml.
 jobs:
   - script: |
       def name = 'sample-project-sky-47-deploy'
@@ -22,6 +27,48 @@ jobs:
               }
               scriptPath('pipelines/sample-project-sky-47/Jenkinsfile')
               lightweight(true)
+            }
+          }
+        }
+      }
+
+  # The BPO portal stack on sky47 CCE: one job per service, as each has its own
+  # build shape (the backend needs a bnpl-build-config checkout and a Maven
+  # container; the web app needs VUE_APP_* build args; Keycloak needs neither).
+  # Every job takes an ENV parameter, so one job serves every environment.
+  - script: |
+      def jobs = [
+        'koko-bpo-sky47-portal-deploy'    : [
+          script: 'pipelines/koko-bpo-sky47/bpo-portal.Jenkinsfile',
+          desc  : 'Build, push to SWR and deploy the BPO portal BACKEND (bnpl-bpo-portal) to sky47 CCE. Pick the target with the ENV parameter.',
+        ],
+        'koko-bpo-sky47-web-deploy'       : [
+          script: 'pipelines/koko-bpo-sky47/bpo-portal-web.Jenkinsfile',
+          desc  : 'Build, push to SWR and deploy the BPO portal SPA (bnpl-bpo-portal-web) to sky47 CCE. Pick the target with the ENV parameter. Note this image is environment-locked: VUE_APP_* values are baked in at build time.',
+        ],
+        'koko-bpo-sky47-keycloak-deploy'  : [
+          script: 'pipelines/koko-bpo-sky47/keycloak.Jenkinsfile',
+          desc  : 'Build, push to SWR and deploy Keycloak (bnpl-keycloak, realm bpo-portal) to sky47 CCE. Pick the target with the ENV parameter. Realm import is one-shot: redeploying does not re-apply the realm export.',
+        ],
+      ]
+      jobs.each { jobName, cfg ->
+        if (jenkins.model.Jenkins.get().getItem(jobName) == null) {
+          pipelineJob(jobName) {
+            description(cfg.desc + ' Created by config/casc/jobs.yaml.')
+            definition {
+              cpsScm {
+                scm {
+                  git {
+                    remote {
+                      url('https://github.com/sg616/jenkin-server-pk.git')
+                      credentials('github-app')   // private repo: GitHub App, see config/casc/credentials.yaml
+                    }
+                    branch('*/main')
+                  }
+                }
+                scriptPath(cfg.script)
+                lightweight(true)
+              }
             }
           }
         }

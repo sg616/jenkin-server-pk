@@ -8,8 +8,14 @@ The **IDs must match exactly**, because the Jenkinsfile refers to them by ID.
 | `swr-login` | Username with password | `docker login` / `docker push` to SWR |
 | `cce-kubeconfig` | Secret file | `kubectl` against the CCE cluster |
 | `github-sg616` | Username with password | Optional. Only needed if a repo becomes private. |
+| `github-darazapacig` | Username with password | Cloning the KOKO app repos (`DarazAPACIG` org) in the `koko-bpo-sky47-*` jobs |
 
 No secret is ever committed to git.
+
+> **`github-app` cannot clone the KOKO repos.** It is a GitHub App scoped to
+> owner `sg616`, which covers this repo and the sample app only. The BPO stack
+> lives in the `DarazAPACIG` org, so those pipelines use `github-darazapacig`.
+> See [`jobs/koko-bpo-sky47-deploy.md`](../jobs/koko-bpo-sky47-deploy.md).
 
 ## As code (recommended)
 `swr-login` and `cce-kubeconfig` are created by Configuration as Code from [`config/casc/credentials.yaml`](../config/casc/credentials.yaml). That file contains only variable names; the values live in root-owned files on the VM:
@@ -19,6 +25,8 @@ No secret is ever committed to git.
 | `/etc/jenkins/secrets/SWR_USER` | `pk-isb-1_<domain>@<AK>` (see below for how to get it) |
 | `/etc/jenkins/secrets/SWR_PASS` | the SWR login key |
 | `/etc/jenkins/secrets/cce-kubeconfig` | the kubeconfig from [05-kubeconfig-cce.md](05-kubeconfig-cce.md) |
+| `/etc/jenkins/secrets/GITHUB_DARAZ_USER` | GitHub login with read access to the `DarazAPACIG` org |
+| `/etc/jenkins/secrets/GITHUB_DARAZ_TOKEN` | a **fine-grained** PAT for that account, limited to the four repos below, `Contents: Read-only`, with an expiry |
 
 Create them without the values touching shell history, then apply:
 ```bash
@@ -26,8 +34,40 @@ sudo install -d -m 0750 -o root -g jenkins /etc/jenkins/secrets
 sudo bash -c 'read -rp "SWR user (pk-isb-1_<domain>@<AK>): " v; printf %s "$v" > /etc/jenkins/secrets/SWR_USER'
 sudo bash -c 'read -rsp "SWR login key: " v; printf %s "$v" > /etc/jenkins/secrets/SWR_PASS'
 sudo install -m 0640 -o root -g jenkins /path/to/kubeconfig.json /etc/jenkins/secrets/cce-kubeconfig
-sudo bash scripts/09-jenkins-casc.sh      # also creates the pipeline job
+sudo bash -c 'read -rp "GitHub login for DarazAPACIG read access: " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_USER'
+sudo bash -c 'read -rsp "GitHub fine-grained PAT (Contents: Read-only): " v; printf %s "$v" > /etc/jenkins/secrets/GITHUB_DARAZ_TOKEN'
+sudo bash scripts/09-jenkins-casc.sh      # also creates the pipeline jobs
 ```
+
+`scripts/09-jenkins-casc.sh` refuses to run until all of these exist, and names
+the ones that are missing.
+
+### Scope the `DarazAPACIG` token narrowly
+
+This credential only ever **clones four repositories**, so give it nothing more:
+
+- `DarazAPACIG/bnpl-bpo-portal-service`
+- `DarazAPACIG/bnpl-bpo-portal-web`
+- `DarazAPACIG/bnpl-keycloak-service`
+- `DarazAPACIG/bnpl-build-config`
+
+Use a **fine-grained** PAT: *Only select repositories* → those four, repository
+permission **`Contents: Read-only`**, and set an expiry. Then rotate it on the
+same schedule as the other credentials (see [Rotation](#rotation)).
+
+**Do not use a classic PAT with the `repo` scope.** That scope is read *and
+write* across every repository the account can reach, including ones unrelated
+to this deployment — a Jenkins compromise would then mean pushable access to the
+whole org's code.
+
+Better still, ask a `DarazAPACIG` owner to install a **GitHub App** on the org
+and replace this with a `gitHubApp` credential (`owner: "DarazAPACIG"`), exactly
+as `github-app` works for `sg616`: not tied to a person, and the token is
+short-lived. The PAT is the fallback for when that approval is not available.
+
+Note this credential sits in the **global** store, like every other credential
+here, so any job on this controller can bind it. If the BPO jobs are ever moved
+into their own Jenkins folder, make it folder-scoped instead.
 - **Rotation:** replace the file, then **Manage Jenkins → Configuration as Code → Reload existing configuration** (or restart Jenkins).
 - Configuration as Code owns the global credentials list: a credential added only in the UI is **removed** on the next restart or reload. Add new credentials to `credentials.yaml` instead.
 - The secret files are covered by the same rules as `credentials.xml`: never copy them off the VM unencrypted.
